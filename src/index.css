@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Worktalk";
+  src: url("/fonts/Worktalk.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "LotaGrotesqueAlt3SemiBold";
+  src: url("/fonts/LotaGrotesqueAlt3SemiBold.otf") format("opentype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+body {
+  font-family: "LotaGrotesqueAlt3SemiBold", system-ui, sans-serif;
+  font-weight: 600;
+  background-color: #eddbc3;
+  margin: 0;
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: "Worktalk", system-ui, sans-serif;
+}
+
+@keyframes float-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.floating-character {
+  animation: float-bob 2.8s ease-in-out infinite;
+}
+
+.card {
+  @apply rounded-2xl border-4 border-black bg-white;
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.3);
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-xl border-2 border-black px-4 py-2 font-sans text-sm transition-colors disabled:opacity-50;
+}
+
+.btn-primary {
+  @apply btn bg-scGreen text-black hover:bg-scGreen/90;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.btn-secondary {
+  @apply btn bg-white text-black hover:bg-scYellow/40;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.2);
+}
+
+.btn-ghost {
+  @apply btn border-transparent bg-transparent shadow-none hover:bg-black/5;
+}
+
+.pill {
+  @apply inline-flex items-center rounded-full border-2 border-black px-3 py-1 text-xs font-sans;
+}
+
+.pill-active {
+  @apply bg-scYellow;
+}
+
+.stat-value {
+  @apply font-display text-3xl text-black;
+}
+
+.stat-label {
+  @apply mt-1 text-sm text-black/70 font-sans;
+}
+
+.callout {
+  @apply rounded-xl border-2 border-black px-4 py-3 font-sans text-sm;
+}
+
+.callout-info {
+  @apply callout bg-scGreen/20;
+}
+
+.callout-warning {
+  @apply callout bg-scOrange/25;
+}
+
+.callout-neutral {
+  @apply callout bg-white;
+}
+
+table.data-table {
+  @apply w-full border-collapse font-sans text-sm;
+}
+
+table.data-table th {
+  @apply border-b-2 border-black bg-cream/60 px-3 py-2 text-left font-sans;
+}
+
+table.data-table td {
+  @apply border-b border-black/15 px-3 py-2;
+}
+
+table.data-table tr:nth-child(even) td {
+  @apply bg-cream/30;
+}
+
+.chart-export {
+  @apply rounded-xl border-2 border-black bg-white p-4;
+}
+
+select.period-select {
+  @apply rounded-lg border-2 border-black bg-white px-3 py-2 font-sans text-sm;
+}
