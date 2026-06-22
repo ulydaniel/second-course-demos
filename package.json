@@ -1,5 +1,5 @@
 {
-  "name": "university-dashboard-demo",
+  "name": "second-course-demos",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -12,6 +12,7 @@
     "jszip": "^3.10.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-router-dom": "^7.18.0",
     "recharts": "^2.15.4",
     "xlsx": "^0.18.5"
   },
