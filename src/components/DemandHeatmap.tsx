@@ -1,18 +1,20 @@
-import { DEMAND_GRID, DEMAND_LOCATIONS, DEMAND_TIMES } from "../data";
+import { useDashboardData } from "../context/DashboardDataContext";
 
 export function DemandHeatmap() {
-  const max = Math.max(...DEMAND_GRID.flat());
+  const { data } = useDashboardData();
+  const { demandGrid, demandLocations, demandTimes } = data;
+  const max = Math.max(...demandGrid.flat());
   const cellW = 52;
   const cellH = 28;
   const labelW = 88;
   const labelH = 22;
-  const width = labelW + DEMAND_TIMES.length * cellW + 16;
-  const height = labelH + DEMAND_LOCATIONS.length * cellH + 32;
+  const width = labelW + demandTimes.length * cellW + 16;
+  const height = labelH + demandLocations.length * cellH + 32;
 
   return (
     <>
       <svg width={width} height={height} className="block">
-        {DEMAND_TIMES.map((time, index) => (
+        {demandTimes.map((time, index) => (
           <text
             key={time}
             x={labelW + index * cellW + cellW / 2}
@@ -25,7 +27,7 @@ export function DemandHeatmap() {
             {time}
           </text>
         ))}
-        {DEMAND_LOCATIONS.map((location, row) => (
+        {demandLocations.map((location, row) => (
           <g key={location}>
             <text
               x={labelW - 8}
@@ -37,7 +39,7 @@ export function DemandHeatmap() {
             >
               {location}
             </text>
-            {DEMAND_GRID[row].map((value, col) => {
+            {demandGrid[row].map((value, col) => {
               const intensity = value / max;
               return (
                 <rect
