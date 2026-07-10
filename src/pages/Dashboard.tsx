@@ -11,16 +11,8 @@ import {
   WasteDivertedChart,
 } from "../components/Charts";
 import { DemandHeatmap } from "../components/DemandHeatmap";
-import {
-  LOCATIONS,
-  POSTS,
-  STAFF,
-  SUMMARY,
-  TABS,
-  UNIVERSITY,
-  periodLabel,
-  type TabId,
-} from "../data";
+import { DashboardDataProvider, useDashboardData } from "../context/DashboardDataContext";
+import { TABS, periodLabel, type TabId } from "../data";
 import {
   downloadAllDataXlsx,
   downloadChartsZip,
@@ -53,6 +45,16 @@ function TabPanel({ active, id, children }: { active: boolean; id: TabId; childr
 }
 
 export default function Dashboard() {
+  return (
+    <DashboardDataProvider>
+      <DashboardContent />
+    </DashboardDataProvider>
+  );
+}
+
+function DashboardContent() {
+  const { data, loading, error, fromApi } = useDashboardData();
+  const { university, summary, locations, posts, staff } = data;
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [period, setPeriod] = useState("year");
   const [exportStatus, setExportStatus] = useState<string | null>(null);
@@ -72,7 +74,15 @@ export default function Dashboard() {
     }
   }
 
-  const lowUtilStaff = STAFF.filter((member) => member.utilization === "low");
+  const lowUtilStaff = staff.filter((member) => member.utilization === "low");
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-cream px-4 py-8">
+        <div className="mx-auto max-w-5xl font-sans text-black/80">Loading dashboard data…</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-cream px-4 py-8">
@@ -93,7 +103,7 @@ export default function Dashboard() {
               className="h-10 w-auto md:h-12"
             />
             <h1 className="font-display text-3xl text-black md:text-4xl">University Dashboard DEMO</h1>
-            <p className="font-sans text-black/80">{UNIVERSITY}</p>
+            <p className="font-sans text-black/80">{university}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -119,10 +129,24 @@ export default function Dashboard() {
         </header>
 
         <div className="mb-4 space-y-2">
-          <div className="callout-warning">
-            <strong className="block mb-1">Demo preview</strong>
-            Sample data for design review only — not connected to live Second Course metrics.
-          </div>
+          {error ? (
+            <div className="callout-warning">
+              <strong className="block mb-1">API unavailable</strong>
+              Showing built-in sample data. Start the backend with <code>uvicorn app.main:app --reload</code> in{" "}
+              <code>backend/</code>. ({error})
+            </div>
+          ) : fromApi ? (
+            <div className="callout-info">
+              <strong className="block mb-1">Connected to local API</strong>
+              Dashboard numbers are loaded from the FastAPI server. Edit{" "}
+              <code>backend/app/services/mock_data.py</code> and refresh to see updates.
+            </div>
+          ) : (
+            <div className="callout-warning">
+              <strong className="block mb-1">Demo preview</strong>
+              Sample data for design review only — not connected to live Second Course metrics.
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <span className="pill bg-white">Admin access</span>
             <span className="text-xs text-black/60 font-sans">
@@ -156,10 +180,10 @@ export default function Dashboard() {
 
         <TabPanel active={activeTab === "overview"} id="overview">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <StatCard value={String(SUMMARY.totalPosts)} label="Posts (period)" />
-            <StatCard value={SUMMARY.totalClaims.toLocaleString()} label="Total claims" accent="green" />
-            <StatCard value={`${SUMMARY.claimRate}%`} label="Claim rate" accent="yellow" />
-            <StatCard value={`${SUMMARY.avgFirstClaimMin} min`} label="Avg time to first claim" />
+            <StatCard value={String(summary.totalPosts)} label="Posts (period)" />
+            <StatCard value={summary.totalClaims.toLocaleString()} label="Total claims" accent="green" />
+            <StatCard value={`${summary.claimRate}%`} label="Claim rate" accent="yellow" />
+            <StatCard value={`${summary.avgFirstClaimMin} min`} label="Avg time to first claim" />
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <PostsOverTimeChart />
@@ -179,14 +203,14 @@ export default function Dashboard() {
 
         <TabPanel active={activeTab === "posts"} id="posts">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <StatCard value={`${SUMMARY.claimRate}%`} label="Overall claim rate" accent="yellow" />
+            <StatCard value={`${summary.claimRate}%`} label="Overall claim rate" accent="yellow" />
             <StatCard value="5.0" label="Avg claims per post" />
             <StatCard value="7.4" label="Avg views per post" />
           </div>
           <ClaimsVsViewsChart />
           <h2 className="font-display text-xl">Individual posts</h2>
           <div className="space-y-3">
-            {POSTS.map((post) => (
+            {posts.map((post) => (
               <details key={post.id} className="card p-4">
                 <summary className="cursor-pointer font-sans text-sm font-semibold">
                   {post.id} — {post.title}
@@ -260,7 +284,7 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {LOCATIONS.map((location) => (
+                  {locations.map((location) => (
                     <tr key={location.name}>
                       <td>{location.name}</td>
                       <td className="text-right">{location.posts}</td>
@@ -298,7 +322,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {STAFF.map((member) => (
+                {staff.map((member) => (
                   <tr key={member.name}>
                     <td>{member.name}</td>
                     <td>{member.role}</td>
@@ -320,9 +344,9 @@ export default function Dashboard() {
 
         <TabPanel active={activeTab === "impact"} id="impact">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <StatCard value={`${SUMMARY.lbsDiverted.toLocaleString()} lbs`} label="Food diverted (est.)" accent="green" />
-            <StatCard value={`${SUMMARY.tco2e} tCO₂e`} label="Climate impact (est.)" accent="green" />
-            <StatCard value={`$${SUMMARY.haulingSavings.toLocaleString()}`} label="Waste hauling savings (est.)" />
+            <StatCard value={`${summary.lbsDiverted.toLocaleString()} lbs`} label="Food diverted (est.)" accent="green" />
+            <StatCard value={`${summary.tco2e} tCO₂e`} label="Climate impact (est.)" accent="green" />
+            <StatCard value={`$${summary.haulingSavings.toLocaleString()}`} label="Waste hauling savings (est.)" />
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <WasteDivertedChart />
@@ -339,8 +363,8 @@ export default function Dashboard() {
               <div>
                 <p className="font-semibold text-black">Grant-ready metrics</p>
                 <p>
-                  {SUMMARY.lbsDiverted.toLocaleString()} lbs diverted · {SUMMARY.totalClaims.toLocaleString()} student
-                  meals claimed · {SUMMARY.claimRate}% utilization of posted food
+                  {summary.lbsDiverted.toLocaleString()} lbs diverted · {summary.totalClaims.toLocaleString()} student
+                  meals claimed · {summary.claimRate}% utilization of posted food
                 </p>
               </div>
               <div>

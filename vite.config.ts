@@ -7,4 +7,12 @@ const base = process.env.GITHUB_PAGES === "true" ? "/second-course-demos/" : "/"
 export default defineConfig({
   plugins: [react()],
   base,
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
+  },
 });

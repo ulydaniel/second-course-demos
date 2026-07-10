@@ -14,20 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  CLAIMS_BY_HOUR,
-  CLAIMS_BY_MONTH,
-  CLIMATE_MONTHS,
-  CLIMATE_TCO2,
-  HOURS,
-  LOCATIONS,
-  MONTHS,
-  POSTS,
-  POSTS_BY_MONTH,
-  STAFF,
-  WASTE_LBS,
-  WASTE_MONTHS,
-} from "../data";
+import { useDashboardData } from "../context/DashboardDataContext";
 
 const CHART_COLORS = ["#6EC100", "#FFDE00", "#FF6E02", "#FD8DFD", "#008B48", "#FE0000"];
 
@@ -54,15 +41,16 @@ export function ChartShell({
 }
 
 export function PostsOverTimeChart() {
-  const data = MONTHS.map((month, index) => ({
+  const { data } = useDashboardData();
+  const chartData = data.months.map((month, index) => ({
     month,
-    posts: POSTS_BY_MONTH[index],
+    posts: data.postsByMonth[index],
   }));
 
   return (
     <ChartShell id="chart-posts-over-time" title="Posts over time" caption="Y-axis: post count">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data}>
+        <BarChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
           <XAxis dataKey="month" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
@@ -75,15 +63,16 @@ export function PostsOverTimeChart() {
 }
 
 export function ClaimsOverTimeChart() {
-  const data = MONTHS.map((month, index) => ({
+  const { data } = useDashboardData();
+  const chartData = data.months.map((month, index) => ({
     month,
-    claims: CLAIMS_BY_MONTH[index],
+    claims: data.claimsByMonth[index],
   }));
 
   return (
     <ChartShell id="chart-claims-over-time" title="Claims over time" caption="Y-axis: claim count">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
+        <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
           <XAxis dataKey="month" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
@@ -96,15 +85,16 @@ export function ClaimsOverTimeChart() {
 }
 
 export function ClaimsByHourChart() {
-  const data = HOURS.map((hour, index) => ({
+  const { data } = useDashboardData();
+  const chartData = data.hours.map((hour, index) => ({
     hour,
-    claims: CLAIMS_BY_HOUR[index],
+    claims: data.claimsByHour[index],
   }));
 
   return (
     <ChartShell id="chart-claims-by-hour" title="Claims by time of day" caption="X-axis: hour · Y-axis: claims">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data}>
+        <BarChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
           <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
@@ -117,7 +107,8 @@ export function ClaimsByHourChart() {
 }
 
 export function PostsByLocationChart() {
-  const data = LOCATIONS.map((location) => ({
+  const { data } = useDashboardData();
+  const chartData = data.locations.map((location) => ({
     name: location.name,
     value: location.posts,
   }));
@@ -126,8 +117,8 @@ export function PostsByLocationChart() {
     <ChartShell id="chart-posts-by-location" title="Posts by location" caption="Share of posts by campus location">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" innerRadius={45} outerRadius={72} paddingAngle={2}>
-            {data.map((entry, index) => (
+          <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={72} paddingAngle={2}>
+            {chartData.map((entry, index) => (
               <Cell key={entry.name} fill={CHART_COLORS[index % CHART_COLORS.length]} stroke="#18181b" strokeWidth={1} />
             ))}
           </Pie>
@@ -140,7 +131,8 @@ export function PostsByLocationChart() {
 }
 
 export function ClaimsVsViewsChart() {
-  const data = POSTS.map((post) => ({
+  const { data } = useDashboardData();
+  const chartData = data.posts.map((post) => ({
     id: post.id,
     views: post.views,
     claims: post.claims,
@@ -149,7 +141,7 @@ export function ClaimsVsViewsChart() {
   return (
     <ChartShell id="chart-claims-vs-views" title="Claims vs views by post" caption="Top sample posts">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data}>
+        <BarChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
           <XAxis dataKey="id" tick={{ fontSize: 10 }} />
           <YAxis tick={{ fontSize: 11 }} />
@@ -164,7 +156,8 @@ export function ClaimsVsViewsChart() {
 }
 
 export function StaffPostsChart() {
-  const data = STAFF.map((member) => ({
+  const { data } = useDashboardData();
+  const chartData = data.staff.map((member) => ({
     name: member.name,
     posts: member.posts,
   }));
@@ -172,7 +165,7 @@ export function StaffPostsChart() {
   return (
     <ChartShell id="chart-staff-posts" title="Posts per staff member" caption="Horizontal bar chart">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
+        <BarChart data={chartData} layout="vertical" margin={{ left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
           <XAxis type="number" tick={{ fontSize: 11 }} />
           <YAxis type="category" dataKey="name" width={72} tick={{ fontSize: 11 }} />
@@ -185,15 +178,16 @@ export function StaffPostsChart() {
 }
 
 export function WasteDivertedChart() {
-  const data = WASTE_MONTHS.map((month, index) => ({
+  const { data } = useDashboardData();
+  const chartData = data.wasteMonths.map((month, index) => ({
     month,
-    lbs: WASTE_LBS[index],
+    lbs: data.wasteLbs[index],
   }));
 
   return (
     <ChartShell id="chart-waste-diverted" title="Food waste diverted (lbs)" caption="Estimated cumulative trend">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
+        <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
           <XAxis dataKey="month" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
@@ -206,15 +200,16 @@ export function WasteDivertedChart() {
 }
 
 export function ClimateImpactChart() {
-  const data = CLIMATE_MONTHS.map((month, index) => ({
+  const { data } = useDashboardData();
+  const chartData = data.climateMonths.map((month, index) => ({
     month,
-    tco2e: CLIMATE_TCO2[index],
+    tco2e: data.climateTco2[index],
   }));
 
   return (
     <ChartShell id="chart-climate-impact" title="Estimated climate impact (tCO₂e)" caption="Emissions avoided from landfill diversion">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
+        <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
           <XAxis dataKey="month" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
