@@ -1,5 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { fetchDashboardData, type DashboardData } from "../api";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  fetchDashboardData,
+  getApiErrorCode,
+  getApiErrorKind,
+  getApiErrorMessage,
+  type ApiErrorKind,
+  type DashboardData,
+} from "../api";
 import {
   CLAIMS_BY_HOUR,
   CLAIMS_BY_MONTH,
@@ -46,46 +53,82 @@ type DashboardDataState = {
   data: DashboardData;
   loading: boolean;
   error: string | null;
+  errorKind: ApiErrorKind | null;
+  errorCode: string | null;
   fromApi: boolean;
+  retry: () => void;
 };
 
 const DashboardDataContext = createContext<DashboardDataState>({
   data: fallbackData,
   loading: true,
   error: null,
+  errorKind: null,
+  errorCode: null,
   fromApi: false,
+  retry: () => undefined,
 });
 
 export function DashboardDataProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<DashboardDataState>({
+  const [retryCount, setRetryCount] = useState(0);
+  const [state, setState] = useState<Omit<DashboardDataState, "retry">>({
     data: fallbackData,
     loading: true,
     error: null,
+    errorKind: null,
+    errorCode: null,
     fromApi: false,
   });
+
+  const retry = useCallback(() => {
+    setRetryCount((count) => count + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
+    setState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      errorKind: null,
+      errorCode: null,
+    }));
+
     fetchDashboardData()
       .then((data) => {
         if (!cancelled) {
-          setState({ data, loading: false, error: null, fromApi: true });
+          setState({
+            data,
+            loading: false,
+            error: null,
+            errorKind: null,
+            errorCode: null,
+            fromApi: true,
+          });
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          const message = error instanceof Error ? error.message : "Failed to load dashboard data";
-          setState({ data: fallbackData, loading: false, error: message, fromApi: false });
+          setState({
+            data: fallbackData,
+            loading: false,
+            error: getApiErrorMessage(error),
+            errorKind: getApiErrorKind(error),
+            errorCode: getApiErrorCode(error),
+            fromApi: false,
+          });
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryCount]);
 
-  return <DashboardDataContext.Provider value={state}>{children}</DashboardDataContext.Provider>;
+  return (
+    <DashboardDataContext.Provider value={{ ...state, retry }}>{children}</DashboardDataContext.Provider>
+  );
 }
 
 export function useDashboardData() {

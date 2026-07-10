@@ -53,7 +53,7 @@ export default function Dashboard() {
 }
 
 function DashboardContent() {
-  const { data, loading, error, fromApi } = useDashboardData();
+  const { data, loading, error, errorKind, errorCode, fromApi, retry } = useDashboardData();
   const { university, summary, locations, posts, staff } = data;
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [period, setPeriod] = useState("year");
@@ -131,9 +131,24 @@ function DashboardContent() {
         <div className="mb-4 space-y-2">
           {error ? (
             <div className="callout-warning">
-              <strong className="block mb-1">API unavailable</strong>
-              Showing built-in sample data. Start the backend with <code>uvicorn app.main:app --reload</code> in{" "}
-              <code>backend/</code>. ({error})
+              <strong className="block mb-1">
+                {errorKind === "network"
+                  ? "Cannot reach API server"
+                  : errorKind === "server"
+                    ? "Server error"
+                    : "API request failed"}
+              </strong>
+              <p className="mb-2">{error}</p>
+              <p className="text-sm text-black/70 mb-2">
+                Showing built-in sample data until the API responds. For local development, run{" "}
+                <code>uvicorn app.main:app --reload</code> in <code>backend/</code>.
+              </p>
+              {errorCode ? (
+                <p className="text-xs text-black/50 mb-2">Error code: {errorCode}</p>
+              ) : null}
+              <button type="button" className="btn-secondary" onClick={retry}>
+                Retry connection
+              </button>
             </div>
           ) : fromApi ? (
             <div className="callout-info">
