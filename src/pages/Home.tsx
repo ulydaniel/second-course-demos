@@ -4,10 +4,10 @@ const apple = `${import.meta.env.BASE_URL}images/SC_apple_transp.png`;
 
 const CARDS = [
   {
-    to: "/dashboard",
+    to: "/portal",
     title: "University Dashboard",
     blurb:
-      "Live-style analytics for campus partners — posts, claims, demand heatmaps, staff utilization, and grant-ready impact metrics.",
+      "Live-style analytics for campus partners — posts, claims, demand heatmaps, staff utilization, and grant-ready impact metrics. Staff sign in with an email approved by Second Course.",
     accent: "bg-scGreen/25",
   },
   {

@@ -2,9 +2,9 @@ from app.schemas.dashboard import OverviewResponse, SummaryKpis
 from app.services import mock_data
 
 
-def get_overview() -> OverviewResponse:
+def get_overview(university: str | None = None) -> OverviewResponse:
     return OverviewResponse(
-        university=mock_data.UNIVERSITY,
+        university=university or mock_data.UNIVERSITY,
         date_range=mock_data.DATE_RANGE,
         summary=SummaryKpis(**mock_data.SUMMARY),
         months=mock_data.MONTHS,

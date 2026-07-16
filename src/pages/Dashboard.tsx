@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { ChartExportLibrary } from "../components/ChartExportLibrary";
 import {
   ClaimsByHourChart,
@@ -54,6 +56,8 @@ export default function Dashboard() {
 
 function DashboardContent() {
   const { data, loading, error, errorKind, errorCode, fromApi, retry } = useDashboardData();
+  const { user, isAdministrator, logout } = useAuth();
+  const navigate = useNavigate();
   const { university, summary, locations, posts, staff } = data;
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [period, setPeriod] = useState("year");
@@ -75,6 +79,11 @@ function DashboardContent() {
   }
 
   const lowUtilStaff = staff.filter((member) => member.utilization === "low");
+
+  async function handleSignOut() {
+    await logout();
+    navigate("/portal", { replace: true });
+  }
 
   if (loading) {
     return (
@@ -104,9 +113,25 @@ function DashboardContent() {
             />
             <h1 className="font-display text-3xl text-black md:text-4xl">University Dashboard DEMO</h1>
             <p className="font-sans text-black/80">{university}</p>
+            {user ? (
+              <p className="font-sans text-xs text-black/60">
+                Signed in as {user.email}
+                {user.university ? ` · ${user.university.name}` : ""}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {isAdministrator ? (
+              <Link to="/admin" className="pill bg-white">
+                Manage approvals
+              </Link>
+            ) : null}
+            {user ? (
+              <button type="button" className="btn-secondary" onClick={handleSignOut}>
+                Sign out
+              </button>
+            ) : null}
             <select
               className="period-select"
               value={period}
