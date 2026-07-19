@@ -111,7 +111,7 @@ function DashboardContent() {
               alt="Second Course"
               className="h-10 w-auto md:h-12"
             />
-            <h1 className="font-display text-3xl text-black md:text-4xl">University Dashboard DEMO</h1>
+            <h1 className="font-display text-3xl text-black md:text-4xl">University Dashboard</h1>
             <p className="font-sans text-black/80">{university}</p>
             {user ? (
               <p className="font-sans text-xs text-black/60">
@@ -129,7 +129,7 @@ function DashboardContent() {
             ) : null}
             {user ? (
               <button type="button" className="btn-secondary" onClick={handleSignOut}>
-                Sign out
+                Log out
               </button>
             ) : null}
             <select
