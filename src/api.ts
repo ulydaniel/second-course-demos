@@ -1,4 +1,5 @@
 import type { PostRecord, StaffMember } from "./data";
+import { getToken } from "./api/session";
 
 export type SummaryKpis = {
   totalPosts: number;
@@ -177,7 +178,8 @@ function toApiError(error: unknown, path: string): ApiError {
 
 async function fetchJson<T>(path: string): Promise<T> {
   try {
-    const response = await fetch(path);
+    const token = getToken();
+    const response = await fetch(path, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
     if (!response.ok) {
       const body = await parseErrorBody(response);
       throw new ApiError({
