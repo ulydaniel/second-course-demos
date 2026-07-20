@@ -19,6 +19,8 @@ type AuthState = {
   logout: () => Promise<void>;
   isApproved: boolean;
   isAdministrator: boolean;
+  /** Approved administrator or editor — can edit campus resources in the student app. */
+  canEditResources: boolean;
 };
 
 const AuthContext = createContext<AuthState>({
@@ -33,6 +35,7 @@ const AuthContext = createContext<AuthState>({
   logout: async () => undefined,
   isApproved: false,
   isAdministrator: false,
+  canEditResources: false,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -87,14 +90,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const isApproved = user?.status === "approved";
+  const role = user?.dashboardRole;
   const value: AuthState = {
     user,
     loading,
     login,
     register,
     logout,
-    isApproved: user?.status === "approved",
-    isAdministrator: user?.status === "approved" && user?.dashboardRole === "administrator",
+    isApproved: Boolean(isApproved),
+    isAdministrator: Boolean(isApproved && role === "administrator"),
+    canEditResources: Boolean(
+      isApproved && (role === "administrator" || role === "editor"),
+    ),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

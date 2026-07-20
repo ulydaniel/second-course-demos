@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ChartExportLibrary } from "../components/ChartExportLibrary";
 import {
@@ -56,8 +56,7 @@ export default function Dashboard() {
 
 function DashboardContent() {
   const { data, loading, error, errorKind, errorCode, fromApi, retry } = useDashboardData();
-  const { user, isAdministrator, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user, isAdministrator } = useAuth();
   const { university, summary, locations, posts, staff } = data;
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [period, setPeriod] = useState("year");
@@ -79,11 +78,6 @@ function DashboardContent() {
   }
 
   const lowUtilStaff = staff.filter((member) => member.utilization === "low");
-
-  async function handleSignOut() {
-    await logout();
-    navigate("/portal", { replace: true });
-  }
 
   if (loading) {
     return (
@@ -126,11 +120,6 @@ function DashboardContent() {
               <Link to="/admin" className="pill bg-white">
                 Manage approvals
               </Link>
-            ) : null}
-            {user ? (
-              <button type="button" className="btn-secondary" onClick={handleSignOut}>
-                Log out
-              </button>
             ) : null}
             <select
               className="period-select"

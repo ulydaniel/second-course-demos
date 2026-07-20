@@ -2,10 +2,12 @@ node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
-resources/
+resources/*
 
 .env
 .venv
+plans/*
+
 
 # Backend
 backend/.venv/
