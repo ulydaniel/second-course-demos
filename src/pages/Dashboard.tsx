@@ -13,8 +13,16 @@ import {
   WasteDivertedChart,
 } from "../components/Charts";
 import { DemandHeatmap } from "../components/DemandHeatmap";
+import type { DashboardPeriod } from "../api";
 import { DashboardDataProvider, useDashboardData } from "../context/DashboardDataContext";
-import { TABS, periodLabel, type TabId } from "../data";
+import {
+  ACADEMIC_YEAR_OPTIONS,
+  CALENDAR_MONTHS,
+  FILTER_YEARS,
+  TABS,
+  periodLabel,
+  type TabId,
+} from "../data";
 import {
   downloadAllDataXlsx,
   downloadChartsZip,
@@ -55,14 +63,45 @@ export default function Dashboard() {
 }
 
 function DashboardContent() {
-  const { data, loading, error, errorKind, errorCode, fromApi, retry } = useDashboardData();
+  const {
+    data,
+    period,
+    filters,
+    setPeriod,
+    setMonth,
+    setYear,
+    loading,
+    refreshing,
+    error,
+    errorKind,
+    errorCode,
+    fromApi,
+    retry,
+  } = useDashboardData();
   const { user, isAdministrator } = useAuth();
   const { university, summary, locations, posts, staff } = data;
   const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const [period, setPeriod] = useState("year");
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const label = periodLabel(period);
+  const label = periodLabel(period, filters.month, filters.year);
+
+  const avgClaimsPerPost =
+    posts.length > 0 ? posts.reduce((sum, post) => sum + post.claims, 0) / posts.length : 0;
+  const avgViewsPerPost =
+    posts.length > 0 ? posts.reduce((sum, post) => sum + post.views, 0) / posts.length : 0;
+
+  const topTimeSlots = [...data.hours]
+    .map((hour, index) => ({
+      time: hour,
+      claims: data.claimsByHour[index] ?? 0,
+    }))
+    .sort((a, b) => b.claims - a.claims)
+    .slice(0, 4)
+    .map((slot) => {
+      const peak = Math.max(...data.claimsByHour, 1);
+      const rate = Math.round((slot.claims / peak) * 100);
+      return [slot.time, slot.claims.toFixed(0), `${rate}%`] as const;
+    });
 
   async function runExport(action: () => void | Promise<void>, successMessage: string) {
     setExporting(true);
@@ -124,13 +163,59 @@ function DashboardContent() {
             <select
               className="period-select"
               value={period}
-              onChange={(event) => setPeriod(event.target.value)}
+              onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}
               aria-label="Date range"
+              disabled={refreshing}
             >
               <option value="week">Week</option>
-              <option value="month">Month</option>
+              <option value="month">Calendar month</option>
               <option value="year">Academic year</option>
             </select>
+            {period === "month" ? (
+              <>
+                <select
+                  className="period-select"
+                  value={filters.month}
+                  onChange={(event) => setMonth(Number(event.target.value))}
+                  aria-label="Month"
+                  disabled={refreshing}
+                >
+                  {CALENDAR_MONTHS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="period-select"
+                  value={filters.year}
+                  onChange={(event) => setYear(Number(event.target.value))}
+                  aria-label="Year"
+                  disabled={refreshing}
+                >
+                  {FILTER_YEARS.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : null}
+            {period === "year" ? (
+              <select
+                className="period-select"
+                value={filters.year === 2026 ? 2025 : filters.year}
+                onChange={(event) => setYear(Number(event.target.value))}
+                aria-label="Academic year"
+                disabled={refreshing}
+              >
+                {ACADEMIC_YEAR_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <button
               type="button"
               className="btn-secondary"
@@ -166,9 +251,12 @@ function DashboardContent() {
             </div>
           ) : fromApi ? (
             <div className="callout-info">
-              <strong className="block mb-1">Connected to local API</strong>
-              Dashboard numbers are loaded from the FastAPI server. Edit{" "}
-              <code>backend/app/services/mock_data.py</code> and refresh to see updates.
+              <strong className="block mb-1">
+                Connected to local API{refreshing ? " · updating…" : ""}
+              </strong>
+              Showing <strong>{label}</strong> from the FastAPI mock store. Change the date range to
+              refetch; edit <code>backend/app/services/mock_data.py</code> period snapshots to tune
+              numbers.
             </div>
           ) : (
             <div className="callout-warning">
@@ -233,8 +321,8 @@ function DashboardContent() {
         <TabPanel active={activeTab === "posts"} id="posts">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <StatCard value={`${summary.claimRate}%`} label="Overall claim rate" accent="yellow" />
-            <StatCard value="5.0" label="Avg claims per post" />
-            <StatCard value="7.4" label="Avg views per post" />
+            <StatCard value={avgClaimsPerPost.toFixed(1)} label="Avg claims per post" />
+            <StatCard value={avgViewsPerPost.toFixed(1)} label="Avg views per post" />
           </div>
           <ClaimsVsViewsChart />
           <h2 className="font-display text-xl">Individual posts</h2>
@@ -287,12 +375,7 @@ function DashboardContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    ["11a – 1p", "18.4", "82%"],
-                    ["1p – 3p", "14.2", "74%"],
-                    ["9a – 11a", "9.8", "61%"],
-                    ["5p – 7p", "6.1", "44%"],
-                  ].map((row) => (
+                  {topTimeSlots.map((row) => (
                     <tr key={row[0]}>
                       <td>{row[0]}</td>
                       <td className="text-right">{row[1]}</td>
@@ -398,7 +481,10 @@ function DashboardContent() {
               </div>
               <div>
                 <p className="font-semibold text-black">Engagement signal</p>
-                <p>Median time to first claim: 8.6 min — indicates an active, responsive student network</p>
+                <p>
+                  Avg time to first claim: {summary.avgFirstClaimMin} min — indicates an active,
+                  responsive student network
+                </p>
               </div>
             </div>
           </div>
@@ -468,9 +554,14 @@ function DashboardContent() {
           <div>
             <h3 className="font-display text-lg mb-2">Export preview</h3>
             <pre className="card overflow-x-auto p-4 text-xs font-mono text-black/80">
-{`post_id,title,staff,location,posted_at,claims,views,claim_rate,first_claim_min,allergens,lbs_diverted
-P-1042,Catered lunch surplus,Maria G.,Alumni Center,2026-06-12T11:35,28,41,0.68,4.2,Gluten; dairy,42
-P-1038,Pizza and salad leftovers,James T.,Student Union,2026-06-11T13:10,44,52,0.85,3.1,Gluten; dairy; tree nuts,58`}
+              {`post_id,title,staff,location,posted_at,claims,views,claim_rate,first_claim_min,allergens,lbs_diverted
+${posts
+  .slice(0, 2)
+  .map(
+    (post) =>
+      `${post.id},${post.title.replaceAll(",", ";")},${post.staff},${post.location},${post.postedAt},${post.claims},${post.views},${(post.claimRate / 100).toFixed(2)},${post.firstClaimMin},${post.allergens.replaceAll(",", ";")},${post.lbsDiverted}`,
+  )
+  .join("\n")}`}
             </pre>
           </div>
         </TabPanel>

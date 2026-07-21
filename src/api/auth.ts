@@ -34,6 +34,13 @@ export type RegisterPayload = {
   fullName: string;
   jobTitle: JobTitle;
   universityId: string;
+  password: string;
+  confirmPassword: string;
+};
+
+export type LoginPayload = {
+  email: string;
+  password: string;
 };
 
 export type ApprovePayload = {
@@ -122,10 +129,10 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
-export async function login(email: string): Promise<LoginResponse> {
+export async function login(payload: LoginPayload): Promise<LoginResponse> {
   const result = await request<LoginResponse>("/api/auth/login", {
     method: "POST",
-    body: { email },
+    body: payload,
   });
   setToken(result.token);
   return result;

@@ -165,8 +165,39 @@ export const TABS: { id: TabId; label: string }[] = [
   { id: "exports", label: "Exports" },
 ];
 
-export function periodLabel(period: string) {
+export function periodLabel(period: string, month?: number, year?: number) {
   if (period === "week") return "Last 7 days";
-  if (period === "month") return "Last 30 days";
+  if (period === "month") {
+    const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const m = month && month >= 1 && month <= 12 ? month : 6;
+    const y = year ?? 2026;
+    return `${names[m - 1]} ${y}`;
+  }
+  if (year != null) {
+    const start = year === 2026 ? 2025 : year;
+    return `Aug ${start} – Jun ${start + 1}`;
+  }
   return DATE_RANGE;
 }
+
+export const CALENDAR_MONTHS = [
+  { value: 1, label: "January" },
+  { value: 2, label: "February" },
+  { value: 3, label: "March" },
+  { value: 4, label: "April" },
+  { value: 5, label: "May" },
+  { value: 6, label: "June" },
+  { value: 7, label: "July" },
+  { value: 8, label: "August" },
+  { value: 9, label: "September" },
+  { value: 10, label: "October" },
+  { value: 11, label: "November" },
+  { value: 12, label: "December" },
+] as const;
+
+export const FILTER_YEARS = [2024, 2025, 2026] as const;
+
+export const ACADEMIC_YEAR_OPTIONS = [
+  { value: 2024, label: "Aug 2024 – Jun 2025" },
+  { value: 2025, label: "Aug 2025 – Jun 2026" },
+] as const;

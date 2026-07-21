@@ -9,9 +9,12 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./second_course.db"
     university_name: str = "San Diego State University"
 
-    # Auth (skeleton — replaced by Firebase-verified sessions later)
+    # Auth (local hashed passwords today; set AUTH_PROVIDER=firebase when ready)
     session_secret: str = "dev-change-me"
     dev_admin_emails: str = "dev@secondcourse.co"
+    dev_admin_password: str = "DevAdmin1"
+    auth_provider: str = "local"
+    firebase_credentials_path: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

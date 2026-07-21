@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { PortalShell } from "../components/PortalShell";
 import { useAuth } from "../context/AuthContext";
@@ -46,12 +46,29 @@ function StatusCallout({ status }: { status: UserStatus }) {
   );
 }
 
+function validatePasswordPair(password: string, confirmPassword: string): string | null {
+  if (password.length < 8) {
+    return "Password must be at least 8 characters.";
+  }
+  if (password !== confirmPassword) {
+    return "Passwords do not match. Check for typos and try again.";
+  }
+  const hasLetter = /[A-Za-z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  if (!hasLetter || !hasDigit) {
+    return "Password must include at least one letter and one number.";
+  }
+  return null;
+}
+
 export default function Portal() {
   const { user, loading, isApproved, login, register } = useAuth();
   const navigate = useNavigate();
 
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [jobTitle, setJobTitle] = useState<JobTitle>("faculty");
   const [universityId, setUniversityId] = useState("");
@@ -59,6 +76,17 @@ export default function Portal() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<UserStatus | null>(null);
+
+  const passwordHint = useMemo(() => {
+    if (mode !== "request" || !password) return null;
+    if (confirmPassword && password !== confirmPassword) {
+      return "Passwords do not match yet.";
+    }
+    if (password.length > 0 && password.length < 8) {
+      return "Use at least 8 characters.";
+    }
+    return null;
+  }, [mode, password, confirmPassword]);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,13 +113,30 @@ export default function Portal() {
     setError(null);
     setStatus(null);
     try {
-      const result =
-        mode === "signin"
-          ? await login(email)
-          : await register({ email, fullName, jobTitle, universityId });
-      setStatus(result.status);
-      if (result.status === "approved") {
-        navigate("/dashboard", { replace: true });
+      if (mode === "signin") {
+        const result = await login({ email, password });
+        setStatus(result.status);
+        if (result.status === "approved") {
+          navigate("/dashboard", { replace: true });
+        }
+      } else {
+        const localError = validatePasswordPair(password, confirmPassword);
+        if (localError) {
+          setError(localError);
+          return;
+        }
+        const result = await register({
+          email,
+          fullName,
+          jobTitle,
+          universityId,
+          password,
+          confirmPassword,
+        });
+        setStatus(result.status);
+        if (result.status === "approved") {
+          navigate("/dashboard", { replace: true });
+        }
       }
     } catch (submitError) {
       setError(getApiErrorMessage(submitError));
@@ -117,6 +162,8 @@ export default function Portal() {
                 setMode("signin");
                 setError(null);
                 setStatus(null);
+                setPassword("");
+                setConfirmPassword("");
               }}
             >
               Sign in
@@ -128,6 +175,8 @@ export default function Portal() {
                 setMode("request");
                 setError(null);
                 setStatus(null);
+                setPassword("");
+                setConfirmPassword("");
               }}
             >
               Request access
@@ -140,6 +189,7 @@ export default function Portal() {
               <input
                 type="email"
                 required
+                autoComplete="username"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@university.edu"
@@ -147,8 +197,47 @@ export default function Portal() {
               />
             </label>
 
+            <label className="block space-y-1">
+              <span className="font-sans text-sm font-semibold">
+                {mode === "request" ? "Create password" : "Password"}
+              </span>
+              <input
+                type="password"
+                required
+                minLength={mode === "request" ? 8 : 1}
+                autoComplete={mode === "request" ? "new-password" : "current-password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={mode === "request" ? "At least 8 characters" : "Your password"}
+                className="w-full rounded-lg border-2 border-black bg-white px-3 py-2 font-sans text-sm"
+              />
+            </label>
+
             {mode === "request" ? (
               <>
+                <label className="block space-y-1">
+                  <span className="font-sans text-sm font-semibold">Confirm password</span>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    placeholder="Re-enter password"
+                    className="w-full rounded-lg border-2 border-black bg-white px-3 py-2 font-sans text-sm"
+                  />
+                  {passwordHint ? (
+                    <span className="font-sans text-xs text-scOrange">{passwordHint}</span>
+                  ) : confirmPassword && password === confirmPassword ? (
+                    <span className="font-sans text-xs text-brandGreen">Passwords match</span>
+                  ) : (
+                    <span className="font-sans text-xs text-black/60">
+                      Must match exactly — catches typos before we create your account.
+                    </span>
+                  )}
+                </label>
+
                 <label className="block space-y-1">
                   <span className="font-sans text-sm font-semibold">Full name</span>
                   <input
@@ -211,6 +300,8 @@ export default function Portal() {
                     onClick={() => {
                       setMode("request");
                       setError(null);
+                      setPassword("");
+                      setConfirmPassword("");
                     }}
                   >
                     Request access instead →
@@ -235,9 +326,9 @@ export default function Portal() {
           <div className="card p-6 space-y-3 bg-scGreen/20">
             <h2 className="font-display text-xl">How access works</h2>
             <ol className="list-decimal space-y-2 pl-5 font-sans text-sm text-black/80">
-              <li>Request access with your campus email.</li>
+              <li>Request access with your campus email and create a password.</li>
               <li>A Second Course developer approves your email and assigns your campus and role.</li>
-              <li>Sign in to open your university's live dashboard.</li>
+              <li>Sign in with email + password to open your university's live dashboard.</li>
             </ol>
           </div>
 

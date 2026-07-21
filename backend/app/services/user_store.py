@@ -30,6 +30,7 @@ class DashboardUser:
     dashboard_role: str
     university_id: str | None
     status: str
+    identity_uid: str | None = None
 
 
 class UserStore(Protocol):
@@ -39,7 +40,12 @@ class UserStore(Protocol):
     def get_by_id(self, user_id: str) -> DashboardUser | None: ...
     def list_users(self, status: str | None = None) -> list[DashboardUser]: ...
     def register(
-        self, email: str, full_name: str, job_title: str, university_id: str
+        self,
+        email: str,
+        full_name: str,
+        job_title: str,
+        university_id: str,
+        identity_uid: str | None = None,
     ) -> DashboardUser: ...
     def create_approved(
         self,
@@ -78,6 +84,8 @@ class InMemoryUserStore:
         return f"u{next(self._ids)}"
 
     def _seed(self) -> None:
+        from app.services.identity import identity
+
         default = University(id="sdsu", name=settings.university_name, slug="sdsu")
         seeded = [
             default,
@@ -88,6 +96,7 @@ class InMemoryUserStore:
             self._universities[university.id] = university
 
         for email in settings.dev_admin_email_list:
+            uid = identity.create_account(email, settings.dev_admin_password)
             user = DashboardUser(
                 id=self._next_id(),
                 email=email,
@@ -96,6 +105,7 @@ class InMemoryUserStore:
                 dashboard_role="administrator",
                 university_id=default.id,
                 status="approved",
+                identity_uid=uid,
             )
             self._users[user.id] = user
 
@@ -122,7 +132,12 @@ class InMemoryUserStore:
         return users
 
     def register(
-        self, email: str, full_name: str, job_title: str, university_id: str
+        self,
+        email: str,
+        full_name: str,
+        job_title: str,
+        university_id: str,
+        identity_uid: str | None = None,
     ) -> DashboardUser:
         user = DashboardUser(
             id=self._next_id(),
@@ -132,6 +147,7 @@ class InMemoryUserStore:
             dashboard_role="viewer",
             university_id=university_id,
             status="pending",
+            identity_uid=identity_uid,
         )
         self._users[user.id] = user
         return user

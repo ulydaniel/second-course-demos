@@ -5,9 +5,9 @@ aliases keep the JSON camelCase to match the frontend types in src/api/auth.ts,
 following the same pattern as schemas/dashboard.py.
 """
 
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 DashboardRole = Literal["administrator", "editor", "viewer"]
 JobTitle = Literal["faculty", "representative", "admin", "dean", "staff", "other"]
@@ -33,7 +33,10 @@ class DashboardUserOut(BaseModel):
 
 
 class LoginRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     email: str = Field(min_length=3)
+    password: str = Field(min_length=1)
 
 
 class RegisterRequest(BaseModel):
@@ -43,6 +46,20 @@ class RegisterRequest(BaseModel):
     full_name: str = Field(alias="fullName", min_length=1)
     job_title: JobTitle = Field(alias="jobTitle")
     university_id: str = Field(alias="universityId")
+    password: str = Field(min_length=8)
+    confirm_password: str = Field(alias="confirmPassword", min_length=8)
+
+    @model_validator(mode="after")
+    def passwords_must_match_and_be_strong(self) -> Self:
+        if len(self.password) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match. Check for typos and try again.")
+        has_letter = any(char.isalpha() for char in self.password)
+        has_digit = any(char.isdigit() for char in self.password)
+        if not (has_letter and has_digit):
+            raise ValueError("Password must include at least one letter and one number.")
+        return self
 
 
 class LoginResponse(BaseModel):
