@@ -11,10 +11,10 @@ class Settings(BaseSettings):
 
     # Auth (local hashed passwords today; set AUTH_PROVIDER=firebase when ready)
     session_secret: str = "dev-change-me"
-    dev_admin_emails: str = "dev@secondcourse.co"
-    dev_admin_password: str = "DevAdmin1"
     auth_provider: str = "local"
-    firebase_credentials_path: str = ""
+    dev_admin_emails: str = "dev@secondcourse.co"
+    # Required from .env / environment — no default in source
+    dev_admin_password: str
 
     @property
     def cors_origin_list(self) -> list[str]:
