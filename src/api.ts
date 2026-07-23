@@ -106,7 +106,13 @@ export class ApiError extends Error {
       case "not_found":
         return "An API endpoint was not found. The frontend and backend versions may be out of sync.";
       case "validation_error":
-        return "The request was invalid. Refresh the page and try again.";
+        return this.message !== "Request validation failed"
+          ? this.message
+          : "The request was invalid. Refresh the page and try again.";
+      case "invalid_credentials":
+        return this.message;
+      case "not_registered":
+        return this.message;
       default:
         return this.message;
     }
@@ -213,13 +219,31 @@ function aggregateApiErrors(failures: { label: string; error: ApiError }[]): Api
   });
 }
 
-export async function fetchDashboardData(): Promise<DashboardData> {
+export type DashboardPeriod = "week" | "month" | "year";
+
+export type DashboardFilters = {
+  period: DashboardPeriod;
+  /** Calendar month 1–12 — used when period is "month" */
+  month: number;
+  /** Calendar year, or academic-year August start when period is "year" */
+  year: number;
+};
+
+export async function fetchDashboardData(filters: DashboardFilters): Promise<DashboardData> {
+  const params = new URLSearchParams({ period: filters.period });
+  if (filters.period === "month") {
+    params.set("month", String(filters.month));
+    params.set("year", String(filters.year));
+  } else if (filters.period === "year") {
+    params.set("year", String(filters.year));
+  }
+  const qs = `?${params.toString()}`;
   const requests = [
-    { label: "overview", promise: fetchJson<OverviewResponse>("/api/overview") },
-    { label: "posts", promise: fetchJson<PostRecord[]>("/api/posts") },
-    { label: "demand", promise: fetchJson<DemandResponse>("/api/demand") },
-    { label: "staff", promise: fetchJson<StaffMember[]>("/api/staff") },
-    { label: "impact", promise: fetchJson<ImpactResponse>("/api/impact") },
+    { label: "overview", promise: fetchJson<OverviewResponse>(`/api/overview${qs}`) },
+    { label: "posts", promise: fetchJson<PostRecord[]>(`/api/posts${qs}`) },
+    { label: "demand", promise: fetchJson<DemandResponse>(`/api/demand${qs}`) },
+    { label: "staff", promise: fetchJson<StaffMember[]>(`/api/staff${qs}`) },
+    { label: "impact", promise: fetchJson<ImpactResponse>(`/api/impact${qs}`) },
   ] as const;
 
   const results = await Promise.allSettled(requests.map((request) => request.promise));

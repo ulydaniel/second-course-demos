@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   fetchDashboardData,
   getApiErrorCode,
@@ -6,6 +6,8 @@ import {
   getApiErrorMessage,
   type ApiErrorKind,
   type DashboardData,
+  type DashboardFilters,
+  type DashboardPeriod,
 } from "../api";
 import {
   CLAIMS_BY_HOUR,
@@ -26,6 +28,7 @@ import {
   WASTE_LBS,
   WASTE_MONTHS,
   DATE_RANGE,
+  periodLabel,
 } from "../data";
 
 const fallbackData: DashboardData = {
@@ -49,9 +52,21 @@ const fallbackData: DashboardData = {
   climateTco2: CLIMATE_TCO2,
 };
 
+const DEFAULT_FILTERS: DashboardFilters = {
+  period: "year",
+  month: 6,
+  year: 2025,
+};
+
 type DashboardDataState = {
   data: DashboardData;
+  filters: DashboardFilters;
+  period: DashboardPeriod;
+  setPeriod: (period: DashboardPeriod) => void;
+  setMonth: (month: number) => void;
+  setYear: (year: number) => void;
   loading: boolean;
+  refreshing: boolean;
   error: string | null;
   errorKind: ApiErrorKind | null;
   errorCode: string | null;
@@ -61,7 +76,13 @@ type DashboardDataState = {
 
 const DashboardDataContext = createContext<DashboardDataState>({
   data: fallbackData,
+  filters: DEFAULT_FILTERS,
+  period: DEFAULT_FILTERS.period,
+  setPeriod: () => undefined,
+  setMonth: () => undefined,
+  setYear: () => undefined,
   loading: true,
+  refreshing: false,
   error: null,
   errorKind: null,
   errorCode: null,
@@ -70,15 +91,38 @@ const DashboardDataContext = createContext<DashboardDataState>({
 });
 
 export function DashboardDataProvider({ children }: { children: ReactNode }) {
+  const [filters, setFilters] = useState<DashboardFilters>(DEFAULT_FILTERS);
   const [retryCount, setRetryCount] = useState(0);
-  const [state, setState] = useState<Omit<DashboardDataState, "retry">>({
+  const hasLoadedRef = useRef(false);
+  const [state, setState] = useState({
     data: fallbackData,
     loading: true,
-    error: null,
-    errorKind: null,
-    errorCode: null,
+    refreshing: false,
+    error: null as string | null,
+    errorKind: null as ApiErrorKind | null,
+    errorCode: null as string | null,
     fromApi: false,
   });
+
+  const setPeriod = useCallback((period: DashboardPeriod) => {
+    setFilters((current) => {
+      if (period === "month") {
+        return { ...current, period, month: current.month || 6, year: current.year || 2026 };
+      }
+      if (period === "year") {
+        return { ...current, period, year: current.year === 2026 ? 2025 : current.year || 2025 };
+      }
+      return { ...current, period };
+    });
+  }, []);
+
+  const setMonth = useCallback((month: number) => {
+    setFilters((current) => ({ ...current, period: "month", month }));
+  }, []);
+
+  const setYear = useCallback((year: number) => {
+    setFilters((current) => ({ ...current, year }));
+  }, []);
 
   const retry = useCallback(() => {
     setRetryCount((count) => count + 1);
@@ -86,21 +130,25 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    const isRefresh = hasLoadedRef.current;
 
     setState((current) => ({
       ...current,
-      loading: true,
+      loading: !isRefresh,
+      refreshing: isRefresh,
       error: null,
       errorKind: null,
       errorCode: null,
     }));
 
-    fetchDashboardData()
+    fetchDashboardData(filters)
       .then((data) => {
         if (!cancelled) {
+          hasLoadedRef.current = true;
           setState({
             data,
             loading: false,
+            refreshing: false,
             error: null,
             errorKind: null,
             errorCode: null,
@@ -110,9 +158,14 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
+          hasLoadedRef.current = true;
           setState({
-            data: fallbackData,
+            data: {
+              ...fallbackData,
+              dateRange: periodLabel(filters.period, filters.month, filters.year),
+            },
             loading: false,
+            refreshing: false,
             error: getApiErrorMessage(error),
             errorKind: getApiErrorKind(error),
             errorCode: getApiErrorCode(error),
@@ -124,10 +177,22 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [retryCount]);
+  }, [filters, retryCount]);
 
   return (
-    <DashboardDataContext.Provider value={{ ...state, retry }}>{children}</DashboardDataContext.Provider>
+    <DashboardDataContext.Provider
+      value={{
+        ...state,
+        filters,
+        period: filters.period,
+        setPeriod,
+        setMonth,
+        setYear,
+        retry,
+      }}
+    >
+      {children}
+    </DashboardDataContext.Provider>
   );
 }
 

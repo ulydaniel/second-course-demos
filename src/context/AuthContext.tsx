@@ -7,6 +7,7 @@ import {
   register as registerRequest,
   setToken,
   type DashboardUser,
+  type LoginPayload,
   type LoginResponse,
   type RegisterPayload,
 } from "../api/auth";
@@ -14,7 +15,7 @@ import {
 type AuthState = {
   user: DashboardUser | null;
   loading: boolean;
-  login: (email: string) => Promise<LoginResponse>;
+  login: (payload: LoginPayload) => Promise<LoginResponse>;
   register: (payload: RegisterPayload) => Promise<LoginResponse>;
   logout: () => Promise<void>;
   isApproved: boolean;
@@ -73,8 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (email: string) => {
-    const result = await loginRequest(email);
+  const login = useCallback(async (payload: LoginPayload) => {
+    const result = await loginRequest(payload);
     setUser(result.user);
     return result;
   }, []);

@@ -1,8 +1,8 @@
 """Session token issuing/verification and the login-or-register flow.
 
 Tokens are signed with an HMAC over a base64 payload — enough for the skeleton.
-When Firebase is wired in, replace `create_session_token` / `resolve_token`
-with Firebase ID token verification and keep the same call sites.
+When Firebase client ID tokens land, replace `create_session_token` /
+`resolve_token` with Firebase verification and keep the same call sites.
 """
 
 import base64
@@ -12,6 +12,7 @@ import json
 import time
 
 from app.config import settings
+from app.services.identity import identity
 from app.services.user_store import DashboardUser, user_store
 
 
@@ -53,9 +54,39 @@ def resolve_token(token: str) -> DashboardUser | None:
     return user_store.get_by_id(user_id)
 
 
-def login(email: str) -> DashboardUser | None:
-    """Return the allowlisted user for an email, or None if unknown."""
-    return user_store.get_by_email(email)
+def login(email: str, password: str) -> DashboardUser | None:
+    """Return the allowlisted user when email exists and password verifies."""
+    user = user_store.get_by_email(email)
+    if user is None:
+        return None
+    if not identity.verify(email, password):
+        return None
+    return user
+
+
+def register_account(
+    *,
+    email: str,
+    full_name: str,
+    job_title: str,
+    university_id: str,
+    password: str,
+) -> DashboardUser:
+    """Create identity credentials (local hash or Firebase) then allowlist row."""
+    existing = user_store.get_by_email(email)
+    if existing is not None:
+        # Re-request: refresh password credentials if they register again.
+        identity.create_account(email, password)
+        return existing
+
+    identity_uid = identity.create_account(email, password)
+    return user_store.register(
+        email=email,
+        full_name=full_name,
+        job_title=job_title,
+        university_id=university_id,
+        identity_uid=identity_uid,
+    )
 
 
 def token_for(user: DashboardUser) -> str | None:
