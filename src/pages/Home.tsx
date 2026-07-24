@@ -7,7 +7,7 @@ const CARDS = [
     to: "/portal",
     title: "University Dashboard",
     blurb:
-      "Live-style analytics for campus partners — posts, claims, demand heatmaps, staff utilization, and grant-ready impact metrics. Staff sign in with an email approved by Second Course.",
+      "Live-style analytics for campus partners — posts, claims, demand heatmaps, staff utilization, grant-ready impact metrics, and campus Resources (pantries, events, bulletin). Staff sign in with an email approved by Second Course.",
     accent: "bg-scGreen/25",
   },
   {

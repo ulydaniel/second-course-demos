@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ChartExportLibrary } from "../components/ChartExportLibrary";
 import {
@@ -13,6 +12,7 @@ import {
   WasteDivertedChart,
 } from "../components/Charts";
 import { DemandHeatmap } from "../components/DemandHeatmap";
+import { ResourcesScreen } from "../components/app/ResourcesScreen";
 import type { DashboardPeriod } from "../api";
 import { DashboardDataProvider, useDashboardData } from "../context/DashboardDataContext";
 import {
@@ -78,7 +78,7 @@ function DashboardContent() {
     fromApi,
     retry,
   } = useDashboardData();
-  const { user, isAdministrator } = useAuth();
+  const { user } = useAuth();
   const { university, summary, locations, posts, staff } = data;
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [exportStatus, setExportStatus] = useState<string | null>(null);
@@ -155,11 +155,6 @@ function DashboardContent() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {isAdministrator ? (
-              <Link to="/admin" className="pill bg-white">
-                Manage approvals
-              </Link>
-            ) : null}
             <select
               className="period-select"
               value={period}
@@ -249,27 +244,12 @@ function DashboardContent() {
                 Retry connection
               </button>
             </div>
-          ) : fromApi ? (
-            <div className="callout-info">
-              <strong className="block mb-1">
-                Connected to local API{refreshing ? " · updating…" : ""}
-              </strong>
-              Showing <strong>{label}</strong> from the FastAPI mock store. Change the date range to
-              refetch; edit <code>backend/app/services/mock_data.py</code> period snapshots to tune
-              numbers.
-            </div>
-          ) : (
+          ) : !fromApi ? (
             <div className="callout-warning">
               <strong className="block mb-1">Demo preview</strong>
               Sample data for design review only — not connected to live Second Course metrics.
             </div>
-          )}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="pill bg-white">Admin access</span>
-            <span className="text-xs text-black/60 font-sans">
-              Access granted by Second Course per university request
-            </span>
-          </div>
+          ) : null}
         </div>
 
         <div className="mb-6 flex flex-wrap gap-2" role="tablist" aria-label="Dashboard sections">
@@ -452,6 +432,14 @@ function DashboardContent() {
             </table>
           </div>
           <StaffPostsChart />
+        </TabPanel>
+
+        <TabPanel active={activeTab === "resources"} id="resources">
+          <p className="font-sans text-black/80">
+            Campus pantries, events calendar, and the student bulletin — the same Resources
+            experience students see in the app.
+          </p>
+          <ResourcesScreen />
         </TabPanel>
 
         <TabPanel active={activeTab === "impact"} id="impact">

@@ -154,13 +154,14 @@ export const CHART_EXPORT_IDS = [
 
 export type ChartExportId = (typeof CHART_EXPORT_IDS)[number];
 
-export type TabId = "overview" | "posts" | "demand" | "staff" | "impact" | "exports";
+export type TabId = "overview" | "posts" | "demand" | "staff" | "resources" | "impact" | "exports";
 
 export const TABS: { id: TabId; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "posts", label: "Posts & Claims" },
   { id: "demand", label: "Demand Map" },
   { id: "staff", label: "Staff Activity" },
+  { id: "resources", label: "Resources" },
   { id: "impact", label: "Impact" },
   { id: "exports", label: "Exports" },
 ];
