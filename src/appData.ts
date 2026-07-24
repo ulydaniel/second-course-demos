@@ -86,6 +86,7 @@ export const FEED_POSTS: FeedPost[] = [
 // Guaranteed weekly food pantries near campus. `days` uses JS weekday numbers
 // (0 = Sun … 6 = Sat) so the calendar can mark recurring pantry days automatically.
 export type Pantry = {
+  id?: string;
   name: string;
   location: string;
   emoji: string;
@@ -120,6 +121,7 @@ export const PANTRIES: Pantry[] = [
 
 // One-off events keyed by day-of-month for the current demo month (June 2026).
 export type SpecialEvent = {
+  id?: string;
   time: string;
   title: string;
   tag: "food" | "resource" | "event";
@@ -135,6 +137,7 @@ export const SPECIAL_EVENTS: Record<number, SpecialEvent[]> = {
 };
 
 export type BulletinItem = {
+  id?: string;
   kind: "Article" | "Recipe" | "Tip";
   title: string;
   blurb: string;

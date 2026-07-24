@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   BULLETIN,
   PANTRIES,
@@ -7,6 +7,18 @@ import {
   type Pantry,
   type SpecialEvent,
 } from "../../appData";
+import {
+  createBulletin,
+  createEvent,
+  createPantry,
+  deleteBulletin as deleteBulletinApi,
+  deleteEvent as deleteEventApi,
+  deletePantry as deletePantryApi,
+  fetchResources,
+  updateBulletin,
+  updateEvent,
+  updatePantry,
+} from "../../api/resources";
 import { useAuth } from "../../context/AuthContext";
 
 const MONTH_LABEL = "June 2026";
@@ -563,6 +575,27 @@ export function ResourcesScreen() {
   const [editingPantryIndex, setEditingPantryIndex] = useState<number | "new" | null>(null);
   const [eventEditor, setEventEditor] = useState<"new" | number | null>(null);
   const [editingBulletinIndex, setEditingBulletinIndex] = useState<number | "new" | null>(null);
+  const [fromApi, setFromApi] = useState(false);
+
+  // Load the shared backend snapshot on mount so the dashboard and student app
+  // stay in sync. On failure keep the appData.ts seed and flag as offline.
+  useEffect(() => {
+    let cancelled = false;
+    fetchResources()
+      .then((snap) => {
+        if (cancelled) return;
+        setPantries(snap.pantries);
+        setEvents(snap.events);
+        setBulletin(snap.bulletin);
+        setFromApi(true);
+      })
+      .catch(() => {
+        if (!cancelled) setFromApi(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const cells: (number | null)[] = [
     ...Array(firstWeekday).fill(null),
@@ -585,6 +618,11 @@ export function ResourcesScreen() {
         <p className="text-sm text-black/70">
           Weekly pantries, a what's-on calendar, and a bulletin board.
         </p>
+        {canEditResources && !fromApi ? (
+          <p className="mt-2 rounded-lg border-2 border-black bg-scYellow/40 px-2.5 py-1.5 text-xs font-semibold">
+            Editing local demo data — not synced. Start the backend to save changes for everyone.
+          </p>
+        ) : null}
       </div>
 
       {/* Weekly pantries */}
@@ -780,17 +818,52 @@ export function ResourcesScreen() {
         <PantryEditor
           initial={editingPantryIndex === "new" ? null : pantries[editingPantryIndex]}
           onClose={() => setEditingPantryIndex(null)}
-          onSave={(pantry) => {
+          onSave={async (pantry) => {
+            const index = editingPantryIndex;
+            const body: Pantry = {
+              name: pantry.name,
+              location: pantry.location,
+              emoji: pantry.emoji,
+              note: pantry.note,
+              hours: pantry.hours,
+            };
+            if (fromApi) {
+              try {
+                if (index === "new") {
+                  const created = await createPantry(body);
+                  setPantries((prev) => [...prev, created]);
+                } else {
+                  const target = pantries[index];
+                  if (target?.id) {
+                    const updated = await updatePantry(target.id, body);
+                    setPantries((prev) => prev.map((item, i) => (i === index ? updated : item)));
+                  }
+                }
+                return;
+              } catch {
+                // Fall through to a local-only update so the demo keeps working.
+              }
+            }
             setPantries((prev) => {
-              if (editingPantryIndex === "new") return [...prev, pantry];
-              return prev.map((item, i) => (i === editingPantryIndex ? pantry : item));
+              if (index === "new") return [...prev, pantry];
+              return prev.map((item, i) => (i === index ? pantry : item));
             });
           }}
           onDelete={
             editingPantryIndex === "new"
               ? undefined
-              : () =>
-                  setPantries((prev) => prev.filter((_, i) => i !== editingPantryIndex))
+              : async () => {
+                  const index = editingPantryIndex;
+                  const target = pantries[index];
+                  if (fromApi && target?.id) {
+                    try {
+                      await deletePantryApi(target.id);
+                    } catch {
+                      // Ignore and still remove locally.
+                    }
+                  }
+                  setPantries((prev) => prev.filter((_, i) => i !== index));
+                }
           }
         />
       ) : null}
@@ -800,26 +873,59 @@ export function ResourcesScreen() {
           dayLabel={selectedDayLabel}
           initial={eventEditor === "new" ? null : selectedSpecial[eventEditor]}
           onClose={() => setEventEditor(null)}
-          onSave={(event) => {
+          onSave={async (event) => {
+            const slot = eventEditor;
+            const day = selected;
+            if (fromApi) {
+              try {
+                if (slot === "new") {
+                  const created = await createEvent({ ...event, day });
+                  setEvents((prev) => ({ ...prev, [day]: [...(prev[day] ?? []), created] }));
+                } else {
+                  const target = (events[day] ?? [])[slot];
+                  if (target?.id) {
+                    const updated = await updateEvent(target.id, { ...event, day });
+                    setEvents((prev) => {
+                      const existing = [...(prev[day] ?? [])];
+                      existing[slot] = updated;
+                      return { ...prev, [day]: existing };
+                    });
+                  }
+                }
+                return;
+              } catch {
+                // Fall through to a local-only update.
+              }
+            }
             setEvents((prev) => {
-              const existing = [...(prev[selected] ?? [])];
-              if (eventEditor === "new") {
+              const existing = [...(prev[day] ?? [])];
+              if (slot === "new") {
                 existing.push(event);
               } else {
-                existing[eventEditor] = event;
+                existing[slot] = event;
               }
-              return { ...prev, [selected]: existing };
+              return { ...prev, [day]: existing };
             });
           }}
           onDelete={
             eventEditor === "new"
               ? undefined
-              : () => {
+              : async () => {
+                  const slot = eventEditor;
+                  const day = selected;
+                  const target = (events[day] ?? [])[slot];
+                  if (fromApi && target?.id) {
+                    try {
+                      await deleteEventApi(target.id);
+                    } catch {
+                      // Ignore and still remove locally.
+                    }
+                  }
                   setEvents((prev) => {
-                    const existing = (prev[selected] ?? []).filter((_, i) => i !== eventEditor);
+                    const existing = (prev[day] ?? []).filter((_, i) => i !== slot);
                     const copy = { ...prev };
-                    if (existing.length === 0) delete copy[selected];
-                    else copy[selected] = existing;
+                    if (existing.length === 0) delete copy[day];
+                    else copy[day] = existing;
                     return copy;
                   });
                 }
@@ -831,17 +937,52 @@ export function ResourcesScreen() {
         <BulletinEditor
           initial={editingBulletinIndex === "new" ? null : bulletin[editingBulletinIndex]}
           onClose={() => setEditingBulletinIndex(null)}
-          onSave={(item) => {
+          onSave={async (item) => {
+            const index = editingBulletinIndex;
+            const body: BulletinItem = {
+              kind: item.kind,
+              title: item.title,
+              blurb: item.blurb,
+              emoji: item.emoji,
+              content: item.content,
+            };
+            if (fromApi) {
+              try {
+                if (index === "new") {
+                  const created = await createBulletin(body);
+                  setBulletin((prev) => [...prev, created]);
+                } else {
+                  const target = bulletin[index];
+                  if (target?.id) {
+                    const updated = await updateBulletin(target.id, body);
+                    setBulletin((prev) => prev.map((entry, i) => (i === index ? updated : entry)));
+                  }
+                }
+                return;
+              } catch {
+                // Fall through to a local-only update.
+              }
+            }
             setBulletin((prev) => {
-              if (editingBulletinIndex === "new") return [...prev, item];
-              return prev.map((entry, i) => (i === editingBulletinIndex ? item : entry));
+              if (index === "new") return [...prev, item];
+              return prev.map((entry, i) => (i === index ? item : entry));
             });
           }}
           onDelete={
             editingBulletinIndex === "new"
               ? undefined
-              : () =>
-                  setBulletin((prev) => prev.filter((_, i) => i !== editingBulletinIndex))
+              : async () => {
+                  const index = editingBulletinIndex;
+                  const target = bulletin[index];
+                  if (fromApi && target?.id) {
+                    try {
+                      await deleteBulletinApi(target.id);
+                    } catch {
+                      // Ignore and still remove locally.
+                    }
+                  }
+                  setBulletin((prev) => prev.filter((_, i) => i !== index));
+                }
           }
         />
       ) : null}

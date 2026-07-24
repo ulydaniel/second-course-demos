@@ -41,3 +41,11 @@ def require_administrator(
     if user.dashboard_role != "administrator":
         raise_api_error(403, "forbidden", "Administrator access is required.")
     return user
+
+
+def require_resource_editor(
+    user: DashboardUser = Depends(require_approved_user),
+) -> DashboardUser:
+    if user.dashboard_role not in ("administrator", "editor"):
+        raise_api_error(403, "forbidden", "Editor or administrator access is required.")
+    return user
