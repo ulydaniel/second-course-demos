@@ -35,17 +35,6 @@ export function DemoLayout() {
           </NavLink>
 
           <nav className="flex flex-1 flex-wrap items-center justify-end gap-2">
-            {DEMOS.map((demo) => (
-              <NavLink
-                key={demo.to}
-                to={demo.to}
-                className={({ isActive }) =>
-                  `pill ${isActive ? "pill-active" : "bg-white"} text-xs`
-                }
-              >
-                {demo.label}
-              </NavLink>
-            ))}
             {isApproved ? (
               <button type="button" className="btn-secondary" onClick={handleLogout}>
                 Log out
