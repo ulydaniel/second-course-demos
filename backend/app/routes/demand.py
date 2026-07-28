@@ -13,4 +13,5 @@ def read_demand_map(filters: dict = Depends(dashboard_filters)) -> DemandRespons
         period=filters["period"],
         month=filters["month"],
         year=filters["year"],
+        week_start=filters["week_start"],
     )

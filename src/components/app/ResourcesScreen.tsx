@@ -668,104 +668,106 @@ export function ResourcesScreen() {
         </div>
       </div>
 
-      {/* Calendar */}
+      {/* Calendar — capped width so it stays phone-sized in the dashboard embed */}
       <div>
         <h3 className="mb-2 font-display text-xl">{MONTH_LABEL}</h3>
-        <div className="card p-3">
-          <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-black/50">
-            {WEEKDAY_LABELS.map((d, i) => (
-              <div key={i}>{d}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1">
-            {cells.map((day, i) => {
-              if (day === null) return <div key={`e${i}`} />;
-              const weekday = new Date(MONTH_YEAR, MONTH_INDEX, day).getDay();
-              const hasPantry = pantriesOpenOn(pantries, weekday).length > 0;
-              const hasEvent = Boolean(events[day]?.length);
-              const isSelected = day === selected;
-              return (
-                <button
-                  key={day}
-                  type="button"
-                  onClick={() => setSelected(day)}
-                  className={`flex aspect-square flex-col items-center justify-center rounded-lg border-2 text-sm ${
-                    isSelected
-                      ? "border-black bg-scYellow font-bold"
-                      : "border-transparent hover:bg-cream/60"
-                  }`}
-                >
-                  {day}
-                  <span className="mt-0.5 flex h-1.5 gap-0.5">
-                    {hasPantry ? <span className="h-1.5 w-1.5 rounded-full bg-scGreen" /> : null}
-                    {hasEvent ? <span className="h-1.5 w-1.5 rounded-full bg-scPink" /> : null}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-2 flex gap-3 text-[10px] text-black/60">
-            <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-scGreen" /> Pantry day
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-scPink" /> Event
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-3 card p-3">
-          <div className="mb-2 flex items-start justify-between gap-2">
-            <h4 className="font-display text-lg">{selectedDayLabel}</h4>
-            {canEditResources ? (
-              <EditChip label="+" onClick={() => setEventEditor("new")} />
-            ) : null}
-          </div>
-          {selectedPantries.length === 0 && selectedSpecial.length === 0 ? (
-            <p className="text-sm text-black/50">Nothing scheduled. Check the Feed for live posts.</p>
-          ) : (
-            <div className="space-y-2">
-              {selectedPantries.map(({ pantry, slot }) => (
-                <div key={pantry.name} className="flex items-start gap-2">
-                  <span className="shrink-0 rounded-md border-2 border-black bg-white px-1.5 py-0.5 text-[11px] font-semibold">
-                    {slot!.time}
-                  </span>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-sm font-semibold">{pantry.name}</span>
-                      <span className="rounded-full border border-black bg-scYellow/40 px-1.5 text-[10px]">
-                        pantry
-                      </span>
-                    </div>
-                    <p className="text-xs text-black/60">{pantry.location}</p>
-                  </div>
-                </div>
-              ))}
-              {selectedSpecial.map((item, i) => (
-                <div key={`${item.title}-${i}`} className="flex items-start gap-2">
-                  <span className="shrink-0 rounded-md border-2 border-black bg-white px-1.5 py-0.5 text-[11px] font-semibold">
-                    {item.time}
-                  </span>
-                  <div className="group min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-sm font-semibold">{item.title}</span>
-                      <span
-                        className={`rounded-full border border-black px-1.5 text-[10px] capitalize ${tagStyle(item.tag)}`}
-                      >
-                        {item.tag}
-                      </span>
-                      {canEditResources ? (
-                        <span className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                          <EditChip label="Edit" onClick={() => setEventEditor(i)} />
-                        </span>
-                      ) : null}
-                    </div>
-                    {item.note ? <p className="text-xs text-black/60">{item.note}</p> : null}
-                  </div>
-                </div>
+        <div className="grid gap-3 md:grid-cols-[minmax(0,16rem)_1fr] md:items-start">
+          <div className="card max-w-[16rem] p-2.5">
+            <div className="mb-0.5 grid grid-cols-7 gap-0.5 text-center text-[10px] font-semibold text-black/50">
+              {WEEKDAY_LABELS.map((d, i) => (
+                <div key={i}>{d}</div>
               ))}
             </div>
-          )}
+            <div className="grid grid-cols-7 gap-0.5">
+              {cells.map((day, i) => {
+                if (day === null) return <div key={`e${i}`} />;
+                const weekday = new Date(MONTH_YEAR, MONTH_INDEX, day).getDay();
+                const hasPantry = pantriesOpenOn(pantries, weekday).length > 0;
+                const hasEvent = Boolean(events[day]?.length);
+                const isSelected = day === selected;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setSelected(day)}
+                    className={`flex h-8 flex-col items-center justify-center rounded-md border-2 text-xs ${
+                      isSelected
+                        ? "border-black bg-scYellow font-bold"
+                        : "border-transparent hover:bg-cream/60"
+                    }`}
+                  >
+                    {day}
+                    <span className="flex h-1 gap-0.5">
+                      {hasPantry ? <span className="h-1 w-1 rounded-full bg-scGreen" /> : null}
+                      {hasEvent ? <span className="h-1 w-1 rounded-full bg-scPink" /> : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-1.5 flex gap-3 text-[10px] text-black/60">
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-scGreen" /> Pantry day
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-scPink" /> Event
+              </span>
+            </div>
+          </div>
+
+          <div className="card p-3">
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <h4 className="font-display text-lg">{selectedDayLabel}</h4>
+              {canEditResources ? (
+                <EditChip label="+" onClick={() => setEventEditor("new")} />
+              ) : null}
+            </div>
+            {selectedPantries.length === 0 && selectedSpecial.length === 0 ? (
+              <p className="text-sm text-black/50">Nothing scheduled. Check the Feed for live posts.</p>
+            ) : (
+              <div className="space-y-2">
+                {selectedPantries.map(({ pantry, slot }) => (
+                  <div key={pantry.name} className="flex items-start gap-2">
+                    <span className="shrink-0 rounded-md border-2 border-black bg-white px-1.5 py-0.5 text-[11px] font-semibold">
+                      {slot!.time}
+                    </span>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm font-semibold">{pantry.name}</span>
+                        <span className="rounded-full border border-black bg-scYellow/40 px-1.5 text-[10px]">
+                          pantry
+                        </span>
+                      </div>
+                      <p className="text-xs text-black/60">{pantry.location}</p>
+                    </div>
+                  </div>
+                ))}
+                {selectedSpecial.map((item, i) => (
+                  <div key={`${item.title}-${i}`} className="flex items-start gap-2">
+                    <span className="shrink-0 rounded-md border-2 border-black bg-white px-1.5 py-0.5 text-[11px] font-semibold">
+                      {item.time}
+                    </span>
+                    <div className="group min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm font-semibold">{item.title}</span>
+                        <span
+                          className={`rounded-full border border-black px-1.5 text-[10px] capitalize ${tagStyle(item.tag)}`}
+                        >
+                          {item.tag}
+                        </span>
+                        {canEditResources ? (
+                          <span className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                            <EditChip label="Edit" onClick={() => setEventEditor(i)} />
+                          </span>
+                        ) : null}
+                      </div>
+                      {item.note ? <p className="text-xs text-black/60">{item.note}</p> : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

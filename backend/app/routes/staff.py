@@ -13,4 +13,5 @@ def read_staff(filters: dict = Depends(dashboard_filters)) -> list[StaffMember]:
         period=filters["period"],
         month=filters["month"],
         year=filters["year"],
+        week_start=filters["week_start"],
     )

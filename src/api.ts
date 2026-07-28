@@ -227,11 +227,15 @@ export type DashboardFilters = {
   month: number;
   /** Calendar year, or academic-year August start when period is "year" */
   year: number;
+  /** Monday of the week as YYYY-MM-DD — used when period is "week" */
+  weekStart: string;
 };
 
 export async function fetchDashboardData(filters: DashboardFilters): Promise<DashboardData> {
   const params = new URLSearchParams({ period: filters.period });
-  if (filters.period === "month") {
+  if (filters.period === "week") {
+    params.set("weekStart", filters.weekStart);
+  } else if (filters.period === "month") {
     params.set("month", String(filters.month));
     params.set("year", String(filters.year));
   } else if (filters.period === "year") {

@@ -87,7 +87,7 @@ export const MODULES: TrainingModule[] = [
       {
         emoji: "🏠",
         title: "Overview tab",
-        body: "Start here for the big picture: total posts, total claims, claim rate, and average time to first claim, plus trend charts. Use the date-range selector to switch between week, month, and academic year.",
+        body: "Start here for the big picture: total posts, total claims, claim rate, and average time to first claim, plus trend charts. Use the date-range selector to switch between a specific week, calendar month, and academic year.",
       },
       {
         emoji: "🗺️",

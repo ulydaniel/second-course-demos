@@ -7,8 +7,9 @@ def get_overview(
     period: str | None = "year",
     month: int | None = None,
     year: int | None = None,
+    week_start: str | None = None,
 ) -> OverviewResponse:
-    snap = mock_data.get_snapshot(period, month=month, year=year)
+    snap = mock_data.get_snapshot(period, month=month, year=year, week_start=week_start)
     return OverviewResponse(
         university=university or mock_data.UNIVERSITY,
         date_range=snap["date_range"],

@@ -21,5 +21,10 @@ def dashboard_filters(
         le=2026,
         description="Calendar year, or academic-year August start when period=year.",
     ),
+    week_start: str | None = Query(
+        None,
+        alias="weekStart",
+        description="Monday of the week as YYYY-MM-DD. Used when period=week.",
+    ),
 ) -> dict[str, int | str | None]:
-    return {"period": period, "month": month, "year": year}
+    return {"period": period, "month": month, "year": year, "week_start": week_start}
