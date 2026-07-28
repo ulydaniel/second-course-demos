@@ -1,7 +1,7 @@
-"""SQLAlchemy stub for universities — future migration target.
+"""SQLAlchemy model for universities (client tenants).
 
-Mirrors the in-memory University in services/user_store.py. Not wired to any
-route yet; kept here so the eventual SQL migration has a defined table shape.
+Each row is a client campus. Branding columns let the frontend theme itself per
+tenant, and metrics/resources are scoped by `university_id` elsewhere.
 """
 
 from sqlalchemy.orm import Mapped, mapped_column
@@ -15,3 +15,8 @@ class University(Base):
     id: Mapped[str] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(nullable=False)
     slug: Mapped[str] = mapped_column(unique=True, nullable=False)
+    # Branding for per-tenant white-labeling (nullable — falls back to defaults).
+    short_name: Mapped[str | None] = mapped_column(nullable=True)
+    primary_color: Mapped[str | None] = mapped_column(nullable=True)
+    accent_color: Mapped[str | None] = mapped_column(nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(nullable=True)

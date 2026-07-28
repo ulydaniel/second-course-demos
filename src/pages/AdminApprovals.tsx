@@ -130,6 +130,7 @@ export default function AdminApprovals() {
 
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<DashboardRole>("viewer");
   const [newJob, setNewJob] = useState<JobTitle>("staff");
   const [newUniversity, setNewUniversity] = useState("");
@@ -175,10 +176,12 @@ export default function AdminApprovals() {
         jobTitle: newJob,
         dashboardRole: newRole,
         universityId: newUniversity,
+        password: newPassword,
       });
       setCreateMessage(`Approved ${newEmail}.`);
       setNewEmail("");
       setNewName("");
+      setNewPassword("");
       await load();
     } catch (createError) {
       setError(getApiErrorMessage(createError));
@@ -246,9 +249,10 @@ export default function AdminApprovals() {
       </div>
 
       <form className="card space-y-4 p-6 bg-scGreen/15" onSubmit={handleCreate}>
-        <h2 className="font-display text-xl">Pre-approve an email</h2>
+        <h2 className="font-display text-xl">Create an approved account</h2>
         <p className="font-sans text-sm text-black/70">
-          Add a campus email directly to the allowlist so the user is approved before they register.
+          Add a campus email with a temporary password so the account is approved and ready to sign
+          in immediately. Share the password securely and have them change it after first login.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-1">
@@ -269,6 +273,18 @@ export default function AdminApprovals() {
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
               placeholder="Optional"
+              className="w-full rounded-lg border-2 border-black bg-white px-3 py-2 font-sans text-sm"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="font-sans text-sm font-semibold">Temporary password</span>
+            <input
+              type="password"
+              required
+              minLength={8}
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder="At least 8 chars, 1 letter + 1 number"
               className="w-full rounded-lg border-2 border-black bg-white px-3 py-2 font-sans text-sm"
             />
           </label>

@@ -25,3 +25,9 @@ dashboard_users
     email, role (administrator | editor | viewer), university_id
     Source: university AllowList document per PRD section 2
 """
+
+from app.models.dashboard_user import DashboardUser
+from app.models.revoked_session import RevokedSession
+from app.models.university import University
+
+__all__ = ["DashboardUser", "RevokedSession", "University"]

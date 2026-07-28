@@ -719,30 +719,134 @@ def _academic_year_snapshot(start_year: int) -> dict[str, Any]:
     return snap
 
 
+# ---------------------------------------------------------------------------
+# Per-university personalization
+# ---------------------------------------------------------------------------
+# Base location naming from the SDSU demo, used as the remap source.
+_BASE_LOCATIONS = ["Alumni Center", "Student Union", "Aztec Recreation", "Engineering Quad", "Campus Events"]
+_BASE_DEMAND_LOCATIONS = ["Alumni Ctr", "Student Union", "Aztec Rec", "Eng. Quad", "Events"]
+
+# Each tenant scales the demo volumes and relabels campus locations so SDSU,
+# UCSD, CSULB, and Southwestern render as clearly distinct deployments.
+_UNIVERSITY_PROFILES: dict[str, dict[str, Any]] = {
+    "sdsu": {
+        "factor": 1.0,
+        "locations": _BASE_LOCATIONS,
+        "demand_locations": _BASE_DEMAND_LOCATIONS,
+    },
+    "ucsd": {
+        "factor": 1.35,
+        "locations": ["Price Center", "Geisel Library", "RIMAC Arena", "Warren Mall", "Sun God Lawn"],
+        "demand_locations": ["Price Ctr", "Geisel", "RIMAC", "Warren", "Sun God"],
+    },
+    "csulb": {
+        "factor": 0.85,
+        "locations": ["USU Plaza", "University Library", "Rec & Wellness", "Friendship Walk", "The Beach Lawn"],
+        "demand_locations": ["USU", "Library", "Rec", "Friendship", "Beach"],
+    },
+    "southwestern": {
+        "factor": 0.55,
+        "locations": ["Corner Cafe", "LRC Library", "Jaguar Union", "DeVore Stadium", "Mayan Hall"],
+        "demand_locations": ["Cafe", "LRC", "Union", "DeVore", "Mayan"],
+    },
+}
+
+
+def _scale_snapshot(snap: dict[str, Any], factor: float) -> None:
+    """Scale the numeric series of a snapshot in place by `factor`."""
+    snap["posts_by_month"] = [_scale_int(v, factor) for v in snap["posts_by_month"]]
+    snap["claims_by_month"] = [_scale_int(v, factor) for v in snap["claims_by_month"]]
+    snap["claims_by_hour"] = [_scale_int(v, factor) for v in snap["claims_by_hour"]]
+    snap["locations"] = [
+        {**loc, "posts": _scale_int(loc["posts"], factor)} for loc in snap["locations"]
+    ]
+    snap["demand_grid"] = [
+        [max(0, min(20, _scale_int(cell, factor))) for cell in row] for row in snap["demand_grid"]
+    ]
+    snap["staff"] = [
+        {**member, "posts": _scale_int(member["posts"], factor)} for member in snap["staff"]
+    ]
+    snap["posts"] = [
+        {
+            **post,
+            "claims": _scale_int(post["claims"], factor),
+            "views": _scale_int(post["views"], factor),
+            "lbs_diverted": _scale_int(post["lbs_diverted"], factor),
+        }
+        for post in snap["posts"]
+    ]
+    snap["waste_lbs"] = [_scale_int(v, factor) for v in snap["waste_lbs"]]
+    snap["climate_tco2"] = [round(v * factor, 3) for v in snap["climate_tco2"]]
+    summary = snap["summary"]
+    snap["summary"] = {
+        **summary,
+        "total_posts": _scale_int(summary["total_posts"], factor),
+        "total_claims": _scale_int(summary["total_claims"], factor),
+        "lbs_diverted": _scale_int(summary["lbs_diverted"], factor),
+        "hauling_savings": _scale_int(summary["hauling_savings"], factor),
+        "tco2e": round(summary["tco2e"] * factor, 3),
+    }
+
+
+def _relabel_locations(snap: dict[str, Any], profile: dict[str, Any]) -> None:
+    """Remap SDSU location names to the tenant's campus locations in place."""
+    full_map = dict(zip(_BASE_LOCATIONS, profile["locations"]))
+    short_map = dict(zip(_BASE_DEMAND_LOCATIONS, profile["demand_locations"]))
+
+    snap["locations"] = [
+        {**loc, "name": full_map.get(loc["name"], loc["name"])} for loc in snap["locations"]
+    ]
+    snap["demand_locations"] = [short_map.get(name, name) for name in snap["demand_locations"]]
+    snap["posts"] = [
+        {**post, "location": full_map.get(post["location"], post["location"])}
+        for post in snap["posts"]
+    ]
+    # Some staff roles mirror location names — localize those too.
+    snap["staff"] = [
+        {**member, "role": full_map.get(member["role"], member["role"])}
+        for member in snap["staff"]
+    ]
+
+
+def _apply_university(snap: dict[str, Any], university_id: str | None) -> dict[str, Any]:
+    """Personalize a base (SDSU) snapshot for the given tenant."""
+    profile = _UNIVERSITY_PROFILES.get(university_id or "sdsu", _UNIVERSITY_PROFILES["sdsu"])
+    factor = profile["factor"]
+    if factor != 1.0:
+        _scale_snapshot(snap, factor)
+    if profile["locations"] != _BASE_LOCATIONS:
+        _relabel_locations(snap, profile)
+    return snap
+
+
 def get_snapshot(
+    university_id: str | None = None,
     period: str | None = "year",
     month: int | None = None,
     year: int | None = None,
     week_start: str | None = None,
 ) -> dict[str, Any]:
-    """Return mock metrics for the requested filter.
+    """Return mock metrics for the requested tenant + filter.
 
     - week: calendar week starting Monday (`week_start` YYYY-MM-DD; default Jun 9 2026)
     - month: calendar month (month + year required; defaults to Jun 2026)
     - year: academic year starting in August of `year` (default 2025)
 
-    Deep copy so handlers can mutate safely (same idea as materializing DB rows).
+    Deep copy so handlers can mutate safely (same idea as materializing DB rows),
+    then personalized per `university_id` so tenants see distinct data.
     """
     key = normalize_period(period)
     if key == "week":
-        return _calendar_week_snapshot(week_start)
-    if key == "month":
-        return _calendar_month_snapshot(_clamp_month(month), _clamp_year(year))
-    if key == "year":
+        snap = _calendar_week_snapshot(week_start)
+    elif key == "month":
+        snap = _calendar_month_snapshot(_clamp_month(month), _clamp_year(year))
+    elif key == "year":
         # Academic year labeled by its August start year.
         start = _clamp_year(year) if year is not None else 2025
         # If caller passes calendar year 2026 while browsing "year", treat as AY 2025–26.
         if start == 2026:
             start = 2025
-        return _academic_year_snapshot(start)
-    return deepcopy(_SNAPSHOTS["year"])
+        snap = _academic_year_snapshot(start)
+    else:
+        snap = deepcopy(_SNAPSHOTS["year"])
+    return _apply_university(snap, university_id)

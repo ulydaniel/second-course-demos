@@ -82,8 +82,11 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
-export async function fetchResources(): Promise<ResourcesSnapshot> {
-  return request<ResourcesSnapshot>("/api/resources");
+// Reads are public but campus-scoped; the SDSU demo apps default to "sdsu".
+export async function fetchResources(universityId = "sdsu"): Promise<ResourcesSnapshot> {
+  return request<ResourcesSnapshot>(
+    `/api/resources?universityId=${encodeURIComponent(universityId)}`,
+  );
 }
 
 export async function createPantry(body: PantryInput): Promise<Pantry> {

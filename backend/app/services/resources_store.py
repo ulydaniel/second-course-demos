@@ -1,10 +1,10 @@
-"""In-memory store for campus Resources (pantries, events, bulletin).
+"""In-memory, per-university store for campus Resources (pantries, events,
+bulletin).
 
-Skeleton mirroring services/user_store.py: routes depend only on the
-`ResourcesStore` protocol, so a SqlResourcesStore or FirebaseResourcesStore can
-drop in later without any route changes. Data is process-local and resets on
-restart. Seeded from the same content as the frontend mock in src/appData.ts so
-the API and the offline fallback stay in sync.
+Data is partitioned by `university_id` so each tenant only sees and edits its
+own campus resources. Reads are public (the student Web/Mobile app renders
+without auth) but must name a university; writes are scoped to the editor's
+campus. Process-local: seeded per campus on construction and reset on restart.
 """
 
 from typing import Protocol
@@ -22,16 +22,22 @@ from app.schemas.resources import (
 
 
 class ResourcesStore(Protocol):
-    def snapshot(self) -> ResourcesSnapshot: ...
-    def add_pantry(self, payload: PantryIn) -> PantryOut: ...
-    def update_pantry(self, pantry_id: str, payload: PantryIn) -> PantryOut | None: ...
-    def delete_pantry(self, pantry_id: str) -> bool: ...
-    def add_event(self, payload: SpecialEventIn) -> SpecialEventOut: ...
-    def update_event(self, event_id: str, payload: SpecialEventIn) -> SpecialEventOut | None: ...
-    def delete_event(self, event_id: str) -> bool: ...
-    def add_bulletin(self, payload: BulletinItemIn) -> BulletinItemOut: ...
-    def update_bulletin(self, item_id: str, payload: BulletinItemIn) -> BulletinItemOut | None: ...
-    def delete_bulletin(self, item_id: str) -> bool: ...
+    def snapshot(self, university_id: str) -> ResourcesSnapshot: ...
+    def add_pantry(self, university_id: str, payload: PantryIn) -> PantryOut: ...
+    def update_pantry(
+        self, university_id: str, pantry_id: str, payload: PantryIn
+    ) -> PantryOut | None: ...
+    def delete_pantry(self, university_id: str, pantry_id: str) -> bool: ...
+    def add_event(self, university_id: str, payload: SpecialEventIn) -> SpecialEventOut: ...
+    def update_event(
+        self, university_id: str, event_id: str, payload: SpecialEventIn
+    ) -> SpecialEventOut | None: ...
+    def delete_event(self, university_id: str, event_id: str) -> bool: ...
+    def add_bulletin(self, university_id: str, payload: BulletinItemIn) -> BulletinItemOut: ...
+    def update_bulletin(
+        self, university_id: str, item_id: str, payload: BulletinItemIn
+    ) -> BulletinItemOut | None: ...
+    def delete_bulletin(self, university_id: str, item_id: str) -> bool: ...
 
 
 def _new_id() -> str:
@@ -39,82 +45,108 @@ def _new_id() -> str:
 
 
 class InMemoryResourcesStore:
-    """Process-local store, seeded on construction. Data resets on restart."""
+    """Process-local store partitioned by university, seeded on construction."""
 
     def __init__(self) -> None:
-        # Insertion order is preserved, which drives the display order in the UI.
-        self._pantries: dict[str, PantryOut] = {}
-        self._events: dict[str, SpecialEventOut] = {}
-        self._bulletin: dict[str, BulletinItemOut] = {}
+        # {university_id: {record_id: record}} — insertion order drives display.
+        self._pantries: dict[str, dict[str, PantryOut]] = {}
+        self._events: dict[str, dict[str, SpecialEventOut]] = {}
+        self._bulletin: dict[str, dict[str, BulletinItemOut]] = {}
         self._seed()
 
-    def _seed(self) -> None:
-        for pantry in _SEED_PANTRIES:
-            self.add_pantry(pantry)
-        for event in _SEED_EVENTS:
-            self.add_event(event)
-        for item in _SEED_BULLETIN:
-            self.add_bulletin(item)
+    def _ensure(self, university_id: str) -> None:
+        self._pantries.setdefault(university_id, {})
+        self._events.setdefault(university_id, {})
+        self._bulletin.setdefault(university_id, {})
 
-    def snapshot(self) -> ResourcesSnapshot:
+    def _seed(self) -> None:
+        for university_id, seed in _SEED_BY_UNIVERSITY.items():
+            self._ensure(university_id)
+            for pantry in seed["pantries"]:
+                self.add_pantry(university_id, pantry)
+            for event in seed["events"]:
+                self.add_event(university_id, event)
+            for item in seed["bulletin"]:
+                self.add_bulletin(university_id, item)
+
+    def snapshot(self, university_id: str) -> ResourcesSnapshot:
+        self._ensure(university_id)
         events: dict[int, list[SpecialEventOut]] = {}
-        for event in self._events.values():
+        for event in self._events[university_id].values():
             events.setdefault(event.day, []).append(event)
         return ResourcesSnapshot(
-            pantries=list(self._pantries.values()),
+            pantries=list(self._pantries[university_id].values()),
             events=events,
-            bulletin=list(self._bulletin.values()),
+            bulletin=list(self._bulletin[university_id].values()),
         )
 
-    def add_pantry(self, payload: PantryIn) -> PantryOut:
+    def add_pantry(self, university_id: str, payload: PantryIn) -> PantryOut:
+        self._ensure(university_id)
         pantry = PantryOut(id=_new_id(), **payload.model_dump())
-        self._pantries[pantry.id] = pantry
+        self._pantries[university_id][pantry.id] = pantry
         return pantry
 
-    def update_pantry(self, pantry_id: str, payload: PantryIn) -> PantryOut | None:
-        if pantry_id not in self._pantries:
+    def update_pantry(
+        self, university_id: str, pantry_id: str, payload: PantryIn
+    ) -> PantryOut | None:
+        self._ensure(university_id)
+        if pantry_id not in self._pantries[university_id]:
             return None
         pantry = PantryOut(id=pantry_id, **payload.model_dump())
-        self._pantries[pantry_id] = pantry
+        self._pantries[university_id][pantry_id] = pantry
         return pantry
 
-    def delete_pantry(self, pantry_id: str) -> bool:
-        return self._pantries.pop(pantry_id, None) is not None
+    def delete_pantry(self, university_id: str, pantry_id: str) -> bool:
+        self._ensure(university_id)
+        return self._pantries[university_id].pop(pantry_id, None) is not None
 
-    def add_event(self, payload: SpecialEventIn) -> SpecialEventOut:
+    def add_event(self, university_id: str, payload: SpecialEventIn) -> SpecialEventOut:
+        self._ensure(university_id)
         event = SpecialEventOut(id=_new_id(), **payload.model_dump())
-        self._events[event.id] = event
+        self._events[university_id][event.id] = event
         return event
 
-    def update_event(self, event_id: str, payload: SpecialEventIn) -> SpecialEventOut | None:
-        if event_id not in self._events:
+    def update_event(
+        self, university_id: str, event_id: str, payload: SpecialEventIn
+    ) -> SpecialEventOut | None:
+        self._ensure(university_id)
+        if event_id not in self._events[university_id]:
             return None
         event = SpecialEventOut(id=event_id, **payload.model_dump())
-        self._events[event_id] = event
+        self._events[university_id][event_id] = event
         return event
 
-    def delete_event(self, event_id: str) -> bool:
-        return self._events.pop(event_id, None) is not None
+    def delete_event(self, university_id: str, event_id: str) -> bool:
+        self._ensure(university_id)
+        return self._events[university_id].pop(event_id, None) is not None
 
-    def add_bulletin(self, payload: BulletinItemIn) -> BulletinItemOut:
+    def add_bulletin(self, university_id: str, payload: BulletinItemIn) -> BulletinItemOut:
+        self._ensure(university_id)
         item = BulletinItemOut(id=_new_id(), **payload.model_dump())
-        self._bulletin[item.id] = item
+        self._bulletin[university_id][item.id] = item
         return item
 
-    def update_bulletin(self, item_id: str, payload: BulletinItemIn) -> BulletinItemOut | None:
-        if item_id not in self._bulletin:
+    def update_bulletin(
+        self, university_id: str, item_id: str, payload: BulletinItemIn
+    ) -> BulletinItemOut | None:
+        self._ensure(university_id)
+        if item_id not in self._bulletin[university_id]:
             return None
         item = BulletinItemOut(id=item_id, **payload.model_dump())
-        self._bulletin[item_id] = item
+        self._bulletin[university_id][item_id] = item
         return item
 
-    def delete_bulletin(self, item_id: str) -> bool:
-        return self._bulletin.pop(item_id, None) is not None
+    def delete_bulletin(self, university_id: str, item_id: str) -> bool:
+        self._ensure(university_id)
+        return self._bulletin[university_id].pop(item_id, None) is not None
 
 
-# --- Seed content (mirrors src/appData.ts PANTRIES / SPECIAL_EVENTS / BULLETIN) ---
+# --- Seed content -----------------------------------------------------------
+# SDSU mirrors src/appData.ts; other campuses get campus-specific pantries and
+# events so each tenant renders as its own deployment. Bulletin tips are generic
+# and shared across campuses.
 
-_SEED_PANTRIES: list[PantryIn] = [
+_SDSU_PANTRIES: list[PantryIn] = [
     PantryIn(
         name="A.S. Food Pantry",
         location="Aztec Student Union, 2nd Floor Landing",
@@ -139,7 +171,7 @@ _SEED_PANTRIES: list[PantryIn] = [
     ),
 ]
 
-_SEED_EVENTS: list[SpecialEventIn] = [
+_SDSU_EVENTS: list[SpecialEventIn] = [
     SpecialEventIn(day=23, time="12p–1p", title="Free lunch on Aztec Lawn", tag="food", note="While supplies last"),
     SpecialEventIn(day=24, time="5p–7p", title="Community dinner (free)", tag="event", note="Newman Center"),
     SpecialEventIn(day=25, time="10a–12p", title="Mobile farmers market", tag="resource", note="Produce by donation"),
@@ -147,7 +179,76 @@ _SEED_EVENTS: list[SpecialEventIn] = [
     SpecialEventIn(day=29, time="3p–5p", title="CalFresh / EBT sign-up help", tag="resource", note="Student Union, Rm 120"),
 ]
 
-_SEED_BULLETIN: list[BulletinItemIn] = [
+_UCSD_PANTRIES: list[PantryIn] = [
+    PantryIn(
+        name="The Hub Triton Food Pantry",
+        location="Original Student Center, Ground Floor",
+        emoji="🔱",
+        note="Free groceries for all UC San Diego students. Swipe your ID.",
+        hours=[
+            {"day": "Mon", "weekday": 1, "time": "11:00a – 6:00p"},
+            {"day": "Wed", "weekday": 3, "time": "11:00a – 6:00p"},
+            {"day": "Fri", "weekday": 5, "time": "10:00a – 3:00p"},
+        ],
+    ),
+    PantryIn(
+        name="Basic Needs Hub",
+        location="Price Center East, Level 3",
+        emoji="🥑",
+        note="CalFresh help, produce pop-ups, and emergency food support.",
+        hours=[
+            {"day": "Tue", "weekday": 2, "time": "10:00a – 4:00p"},
+            {"day": "Thu", "weekday": 4, "time": "10:00a – 4:00p"},
+        ],
+    ),
+]
+
+_UCSD_EVENTS: list[SpecialEventIn] = [
+    SpecialEventIn(day=22, time="12p–2p", title="Triton Farmers Market", tag="resource", note="Town Square"),
+    SpecialEventIn(day=24, time="5p–7p", title="Free community dinner", tag="food", note="The Village"),
+    SpecialEventIn(day=27, time="1p–3p", title="Surplus catering drop", tag="food", note="Posted live in Feed"),
+    SpecialEventIn(day=30, time="3p–5p", title="CalFresh sign-up help", tag="resource", note="Price Center East L3"),
+]
+
+_CSULB_PANTRIES: list[PantryIn] = [
+    PantryIn(
+        name="ASI Beach Pantry",
+        location="University Student Union, Room 229",
+        emoji="🏖️",
+        note="Free food for all CSULB students. Bring your BeachID.",
+        hours=[
+            {"day": "Mon", "weekday": 1, "time": "10:00a – 4:00p"},
+            {"day": "Wed", "weekday": 3, "time": "10:00a – 4:00p"},
+            {"day": "Thu", "weekday": 4, "time": "12:00p – 6:00p"},
+        ],
+    ),
+]
+
+_CSULB_EVENTS: list[SpecialEventIn] = [
+    SpecialEventIn(day=23, time="12p–1p", title="Free lunch on Friendship Walk", tag="food", note="While supplies last"),
+    SpecialEventIn(day=26, time="10a–12p", title="Mobile farmers market", tag="resource", note="Central Quad"),
+    SpecialEventIn(day=28, time="3p–5p", title="CalFresh / EBT sign-up help", tag="resource", note="USU Room 229"),
+]
+
+_SWC_PANTRIES: list[PantryIn] = [
+    PantryIn(
+        name="Jaguar Food Pantry",
+        location="Cesar Chavez Building, Room 101",
+        emoji="🐆",
+        note="Free groceries for all Southwestern College students. No ID needed.",
+        hours=[
+            {"day": "Tue", "weekday": 2, "time": "9:00a – 1:00p"},
+            {"day": "Thu", "weekday": 4, "time": "1:00p – 5:00p"},
+        ],
+    ),
+]
+
+_SWC_EVENTS: list[SpecialEventIn] = [
+    SpecialEventIn(day=25, time="11a–1p", title="Free lunch at Mayan Hall", tag="food", note="While supplies last"),
+    SpecialEventIn(day=29, time="2p–4p", title="CalFresh sign-up help", tag="resource", note="LRC Library"),
+]
+
+_SHARED_BULLETIN: list[BulletinItemIn] = [
     BulletinItemIn(
         kind="Recipe",
         title="3 no-cook meals from pantry staples",
@@ -180,11 +281,8 @@ _SEED_BULLETIN: list[BulletinItemIn] = [
         emoji="📰",
         content=[
             "Roughly 1 in 3 college students experiences food insecurity at some point. It has nothing to do with effort or worth — costs are high and budgets are tight.",
-            "On-campus resources you can use today, no questions asked:",
-            "• A.S. Food Pantry — free groceries with your Red ID.",
-            "• Wesley House Food Pantry — free food with proof of enrollment.",
-            "• Second Course — claim free surplus food posted around campus in real time.",
-            "• Basic Needs Center — CalFresh enrollment help, emergency grants, and more.",
+            "Check your campus pantry and Basic Needs Center for free groceries, CalFresh enrollment help, and emergency grants.",
+            "Second Course — claim free surplus food posted around campus in real time.",
             "Using these is normal and encouraged. They exist precisely so you can focus on school.",
         ],
     ),
@@ -201,6 +299,13 @@ _SEED_BULLETIN: list[BulletinItemIn] = [
         ],
     ),
 ]
+
+_SEED_BY_UNIVERSITY: dict[str, dict[str, list]] = {
+    "sdsu": {"pantries": _SDSU_PANTRIES, "events": _SDSU_EVENTS, "bulletin": _SHARED_BULLETIN},
+    "ucsd": {"pantries": _UCSD_PANTRIES, "events": _UCSD_EVENTS, "bulletin": _SHARED_BULLETIN},
+    "csulb": {"pantries": _CSULB_PANTRIES, "events": _CSULB_EVENTS, "bulletin": _SHARED_BULLETIN},
+    "southwestern": {"pantries": _SWC_PANTRIES, "events": _SWC_EVENTS, "bulletin": _SHARED_BULLETIN},
+}
 
 
 resources_store: ResourcesStore = InMemoryResourcesStore()

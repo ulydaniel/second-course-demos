@@ -1,8 +1,10 @@
-"""Session token issuing/verification and the login-or-register flow.
+"""Session token issuing/verification and the login/register flows.
 
-Tokens are signed with an HMAC over a base64 payload — enough for the skeleton.
-When Firebase client ID tokens land, replace `create_session_token` /
-`resolve_token` with Firebase verification and keep the same call sites.
+Tokens are HMAC-signed over a base64 payload carrying `sub`, `iat`, `exp`, and a
+random `jti`. `resolve_token` enforces expiry and checks the `jti` against the
+server-side revocation list (services/session_store.py), so logout truly kills a
+token. When Firebase client ID tokens land, replace create/resolve here and keep
+the same call sites.
 """
 
 import base64
@@ -10,8 +12,10 @@ import hashlib
 import hmac
 import json
 import time
+import uuid
 
 from app.config import settings
+from app.services import session_store
 from app.services.identity import identity
 from app.services.user_store import DashboardUser, user_store
 
@@ -33,11 +37,18 @@ def _sign(payload: str) -> str:
 
 
 def create_session_token(user_id: str) -> str:
-    payload = _b64encode(json.dumps({"sub": user_id, "iat": int(time.time())}).encode())
+    now = int(time.time())
+    claims = {
+        "sub": user_id,
+        "iat": now,
+        "exp": now + settings.session_ttl_seconds,
+        "jti": uuid.uuid4().hex,
+    }
+    payload = _b64encode(json.dumps(claims).encode())
     return f"{payload}.{_sign(payload)}"
 
 
-def resolve_token(token: str) -> DashboardUser | None:
+def _decode_token(token: str) -> dict | None:
     parts = token.split(".")
     if len(parts) != 2:
         return None
@@ -48,10 +59,37 @@ def resolve_token(token: str) -> DashboardUser | None:
         data = json.loads(_b64decode(payload))
     except (ValueError, json.JSONDecodeError):
         return None
+    return data if isinstance(data, dict) else None
+
+
+def resolve_token(token: str) -> DashboardUser | None:
+    data = _decode_token(token)
+    if data is None:
+        return None
+    exp = data.get("exp")
+    if not isinstance(exp, int) or exp < int(time.time()):
+        return None
+    jti = data.get("jti")
+    if isinstance(jti, str) and session_store.is_revoked(jti):
+        return None
     user_id = data.get("sub")
     if not isinstance(user_id, str):
         return None
     return user_store.get_by_id(user_id)
+
+
+def revoke_token(token: str) -> bool:
+    """Add a token's jti to the revocation list. Returns False if unparseable."""
+    data = _decode_token(token)
+    if data is None:
+        return False
+    jti = data.get("jti")
+    if not isinstance(jti, str):
+        return False
+    exp = data.get("exp")
+    expires_at = exp if isinstance(exp, int) else int(time.time()) + settings.session_ttl_seconds
+    session_store.revoke(jti, expires_at)
+    return True
 
 
 def login(email: str, password: str) -> DashboardUser | None:
@@ -72,21 +110,20 @@ def register_account(
     university_id: str,
     password: str,
 ) -> DashboardUser:
-    """Create identity credentials (local hash or Firebase) then allowlist row."""
-    existing = user_store.get_by_email(email)
-    if existing is not None:
-        # Re-request: refresh password credentials if they register again.
-        identity.create_account(email, password)
-        return existing
+    """Create the allowlist row (pending) then set its credentials.
 
-    identity_uid = identity.create_account(email, password)
-    return user_store.register(
+    Callers must first ensure the email is not already registered — re-using an
+    existing email is rejected upstream (409) so a registration can never
+    overwrite an existing account's password.
+    """
+    user = user_store.register(
         email=email,
         full_name=full_name,
         job_title=job_title,
         university_id=university_id,
-        identity_uid=identity_uid,
     )
+    identity.create_account(email, password)
+    return user
 
 
 def token_for(user: DashboardUser) -> str | None:

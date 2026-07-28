@@ -1,7 +1,10 @@
 """Identity provider for dashboard user passwords.
 
-Local mode hashes passwords in-process (demo until Firebase is configured).
-Firebase mode creates the Auth user via the Admin SDK when credentials exist.
+Local mode now persists credentials in SQLite: `create_account` stores a
+Fernet-wrapped PBKDF2 hash on the user's row (services/crypto.py), and `verify`
+reads it back. This survives restarts and is shared across workers, unlike the
+old in-process dict. Firebase mode creates the Auth user via the Admin SDK when
+credentials exist and otherwise falls back to the durable local store.
 
 Routes call `identity.create_account` / `identity.verify` only — swapping
 providers does not change Portal or allowlist APIs.
@@ -9,13 +12,24 @@ providers does not change Portal or allowlist APIs.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
-import secrets
 from typing import Protocol
 
 from app.config import settings
+from app.services import crypto
+from app.services.crypto import hash_password, verify_password  # re-exported
+from app.services.user_store import user_store
+
+__all__ = [
+    "identity",
+    "IdentityProvider",
+    "LocalIdentityProvider",
+    "FirebaseIdentityProvider",
+    "build_identity_provider",
+    "hash_password",
+    "verify_password",
+    "validate_password_pair",
+]
 
 
 class IdentityProvider(Protocol):
@@ -31,59 +45,27 @@ class IdentityProvider(Protocol):
         ...
 
 
-def hash_password(password: str, salt: str | None = None) -> str:
-    """PBKDF2-SHA256 hash. Format: pbkdf2_sha256$iterations$salt$digest."""
-    iterations = 120_000
-    salt_value = salt or secrets.token_hex(16)
-    digest = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode("utf-8"),
-        salt_value.encode("utf-8"),
-        iterations,
-    ).hex()
-    return f"pbkdf2_sha256${iterations}${salt_value}${digest}"
-
-
-def verify_password(password: str, encoded: str) -> bool:
-    try:
-        algorithm, iterations_s, salt, digest = encoded.split("$", 3)
-    except ValueError:
-        return False
-    if algorithm != "pbkdf2_sha256":
-        return False
-    try:
-        iterations = int(iterations_s)
-    except ValueError:
-        return False
-    candidate = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode("utf-8"),
-        salt.encode("utf-8"),
-        iterations,
-    ).hex()
-    return hmac.compare_digest(candidate, digest)
+def _normalize(email: str) -> str:
+    return email.strip().lower()
 
 
 class LocalIdentityProvider:
-    """In-memory email → password hash map (resets with the process)."""
-
-    def __init__(self) -> None:
-        self._hashes: dict[str, str] = {}
+    """Persists Fernet-wrapped PBKDF2 hashes on the dashboard_users row."""
 
     def create_account(self, email: str, password: str) -> str:
-        key = email.strip().lower()
-        self._hashes[key] = hash_password(password)
+        key = _normalize(email)
+        wrapped = crypto.hash_and_encrypt(password)
+        user_store.set_password_hash(key, wrapped)
         return f"local:{key}"
 
     def verify(self, email: str, password: str) -> bool:
-        key = email.strip().lower()
-        encoded = self._hashes.get(key)
-        if encoded is None:
+        stored = user_store.get_password_hash(_normalize(email))
+        if not stored:
             return False
-        return verify_password(password, encoded)
+        return crypto.verify_encrypted(password, stored)
 
     def has_credentials(self, email: str) -> bool:
-        return email.strip().lower() in self._hashes
+        return user_store.get_password_hash(_normalize(email)) is not None
 
     def seed(self, email: str, password: str) -> None:
         self.create_account(email, password)
@@ -93,7 +75,7 @@ class FirebaseIdentityProvider:
     """Create/verify users in Firebase Auth when Admin credentials are present.
 
     Until `FIREBASE_CREDENTIALS_PATH` (or GOOGLE_APPLICATION_CREDENTIALS) is set,
-    create_account raises so the API can fall back or return a clear error.
+    create_account falls back to the durable local store so the API keeps working.
     """
 
     def __init__(self) -> None:
@@ -122,31 +104,21 @@ class FirebaseIdentityProvider:
 
     def create_account(self, email: str, password: str) -> str:
         if not self.ready:
-            # Demo path: keep local hash until Firebase credentials are configured.
             return self._local_fallback.create_account(email, password)
         from firebase_admin import auth
 
-        record = auth.create_user(email=email.strip().lower(), password=password)
+        record = auth.create_user(email=_normalize(email), password=password)
         return record.uid
 
     def verify(self, email: str, password: str) -> bool:
         """Server-side password check.
 
         Firebase Admin cannot verify a password directly; production sign-in
-        should use the Firebase client SDK (ID token) on the frontend.
-        Until that lands, fall back to the local hash store used at create time.
+        should use the Firebase client SDK (ID token) on the frontend. Until
+        that lands, fall back to the durable local hash used at create time.
         """
         if self._local_fallback.has_credentials(email):
             return self._local_fallback.verify(email, password)
-        if not self.ready:
-            return False
-        # Firebase-only accounts: accept presence + rely on client ID tokens later.
-        from firebase_admin import auth
-
-        try:
-            auth.get_user_by_email(email.strip().lower())
-        except Exception:
-            return False
         return False
 
     def has_credentials(self, email: str) -> bool:
@@ -157,7 +129,7 @@ class FirebaseIdentityProvider:
         from firebase_admin import auth
 
         try:
-            auth.get_user_by_email(email.strip().lower())
+            auth.get_user_by_email(_normalize(email))
             return True
         except Exception:
             return False

@@ -3,5 +3,7 @@ uvicorn[standard]>=0.32.0
 sqlalchemy>=2.0.36
 pydantic-settings>=2.6.0
 python-dotenv>=1.0.1
+cryptography>=43.0.0
+slowapi>=0.1.9
 # Optional — only needed when AUTH_PROVIDER=firebase and credentials are configured:
 # firebase-admin>=6.5.0
