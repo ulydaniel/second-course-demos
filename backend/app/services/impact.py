@@ -6,8 +6,9 @@ def get_impact(
     period: str | None = "year",
     month: int | None = None,
     year: int | None = None,
+    week_start: str | None = None,
 ) -> ImpactResponse:
-    snap = mock_data.get_snapshot(period, month=month, year=year)
+    snap = mock_data.get_snapshot(period, month=month, year=year, week_start=week_start)
     return ImpactResponse(
         waste_months=snap["waste_months"],
         waste_lbs=snap["waste_lbs"],

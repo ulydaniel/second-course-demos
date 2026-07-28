@@ -13,4 +13,5 @@ def read_posts(filters: dict = Depends(dashboard_filters)) -> list[PostRecord]:
         period=filters["period"],
         month=filters["month"],
         year=filters["year"],
+        week_start=filters["week_start"],
     )

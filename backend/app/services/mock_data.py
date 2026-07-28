@@ -8,6 +8,7 @@ matching numbers so routes stay identical when the store becomes live queries.
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
 from app.config import settings
@@ -21,6 +22,9 @@ PERIOD_LABELS: dict[Period, str] = {
     "month": "Last 30 days",
     "year": "Aug 2025 – Jun 2026",
 }
+
+# Monday of the demo week that contains the sample Jun 11–12 posts.
+DEFAULT_WEEK_START = date(2026, 6, 8)
 
 # ---------------------------------------------------------------------------
 # Academic year (default) — matches historical src/data.ts constants
@@ -501,6 +505,93 @@ def _academic_year_label(start_year: int) -> str:
     return f"Aug {start_year} – Jun {start_year + 1}"
 
 
+def _parse_week_start(week_start: str | None) -> date:
+    """Parse YYYY-MM-DD and snap to that week's Monday."""
+    if not week_start:
+        return DEFAULT_WEEK_START
+    try:
+        parsed = date.fromisoformat(week_start)
+    except ValueError:
+        return DEFAULT_WEEK_START
+    return parsed - timedelta(days=parsed.weekday())
+
+
+def _week_label(monday: date) -> str:
+    sunday = monday + timedelta(days=6)
+    if monday.month == sunday.month and monday.year == sunday.year:
+        return f"{_MONTH_NAMES[monday.month - 1]} {monday.day}–{sunday.day}, {sunday.year}"
+    return (
+        f"{_MONTH_NAMES[monday.month - 1]} {monday.day} – "
+        f"{_MONTH_NAMES[sunday.month - 1]} {sunday.day}, {sunday.year}"
+    )
+
+
+def _calendar_week_snapshot(week_start: str | None) -> dict[str, Any]:
+    """Build a selectable calendar-week view from the base week snapshot.
+
+    Mimics a Firebase/SQL query filtered to posted_at within [Mon, Sun].
+    """
+    monday = _parse_week_start(week_start)
+    sunday = monday + timedelta(days=6)
+    label = _week_label(monday)
+
+    # Vary metrics by ISO week so switching weeks is visible in the demo.
+    iso_week = monday.isocalendar()[1]
+    factor = 0.65 + 0.06 * (iso_week % 8)
+    year_factor = 1.0 + 0.04 * (monday.year - DEFAULT_WEEK_START.year)
+    factor *= year_factor
+
+    snap = deepcopy(_WEEK)
+    snap["date_range"] = label
+    snap["posts_by_month"] = [_scale_int(v, factor) for v in _WEEK["posts_by_month"]]
+    snap["claims_by_month"] = [_scale_int(v, factor) for v in _WEEK["claims_by_month"]]
+    snap["claims_by_hour"] = [_scale_int(v, factor) for v in _WEEK["claims_by_hour"]]
+    snap["locations"] = [
+        {
+            "name": loc["name"],
+            "posts": _scale_int(loc["posts"], factor),
+            "claim_rate": min(95, max(30, loc["claim_rate"] + (iso_week % 5) - 2)),
+        }
+        for loc in _WEEK["locations"]
+    ]
+    snap["demand_grid"] = [
+        [max(0, min(20, _scale_int(cell, factor))) for cell in row]
+        for row in _WEEK["demand_grid"]
+    ]
+    snap["staff"] = [
+        {**member, "posts": _scale_int(member["posts"], factor)} for member in _WEEK["staff"]
+    ]
+
+    in_range_posts = []
+    for post in _YEAR["posts"]:
+        try:
+            posted = datetime.fromisoformat(post["posted_at"]).date()
+        except ValueError:
+            continue
+        if monday <= posted <= sunday:
+            in_range_posts.append(deepcopy(post))
+    if not in_range_posts:
+        # Keep a scaled subset of the week demo posts so the Posts tab isn't empty.
+        in_range_posts = deepcopy(_WEEK["posts"][: max(1, _scale_int(2, factor))])
+    snap["posts"] = in_range_posts
+
+    snap["waste_months"] = snap["months"][::2]  # Mon, Wed, Fri, Sun
+    snap["waste_lbs"] = [_scale_int(v, factor) for v in _WEEK["waste_lbs"]]
+    snap["climate_months"] = snap["waste_months"]
+    snap["climate_tco2"] = [round(v * factor, 3) for v in _WEEK["climate_tco2"]]
+    base = _WEEK["summary"]
+    snap["summary"] = {
+        "total_posts": _scale_int(base["total_posts"], factor),
+        "total_claims": _scale_int(base["total_claims"], factor),
+        "claim_rate": min(95, max(40, base["claim_rate"] + (iso_week % 5) - 2)),
+        "avg_first_claim_min": round(base["avg_first_claim_min"] + (iso_week % 4) * 0.4, 1),
+        "lbs_diverted": _scale_int(base["lbs_diverted"], factor),
+        "tco2e": round(base["tco2e"] * factor, 3),
+        "hauling_savings": _scale_int(base["hauling_savings"], factor),
+    }
+    return snap
+
+
 def _calendar_month_snapshot(month: int, year: int) -> dict[str, Any]:
     """Build a calendar-month view from the academic-year series + post dates.
 
@@ -632,16 +723,19 @@ def get_snapshot(
     period: str | None = "year",
     month: int | None = None,
     year: int | None = None,
+    week_start: str | None = None,
 ) -> dict[str, Any]:
     """Return mock metrics for the requested filter.
 
-    - week: rolling last-7-days snapshot
+    - week: calendar week starting Monday (`week_start` YYYY-MM-DD; default Jun 9 2026)
     - month: calendar month (month + year required; defaults to Jun 2026)
     - year: academic year starting in August of `year` (default 2025)
 
     Deep copy so handlers can mutate safely (same idea as materializing DB rows).
     """
     key = normalize_period(period)
+    if key == "week":
+        return _calendar_week_snapshot(week_start)
     if key == "month":
         return _calendar_month_snapshot(_clamp_month(month), _clamp_year(year))
     if key == "year":
@@ -651,4 +745,4 @@ def get_snapshot(
         if start == 2026:
             start = 2025
         return _academic_year_snapshot(start)
-    return deepcopy(_SNAPSHOTS["week"])
+    return deepcopy(_SNAPSHOTS["year"])

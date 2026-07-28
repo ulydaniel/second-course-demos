@@ -14,7 +14,7 @@ const logo = `${import.meta.env.BASE_URL}images/second-course-logo.png`;
 export function DemoLayout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { isApproved, logout } = useAuth();
+  const { isApproved, isAdministrator, logout } = useAuth();
 
   // Scroll to top whenever the demo changes.
   useEffect(() => {
@@ -35,6 +35,11 @@ export function DemoLayout() {
           </NavLink>
 
           <nav className="flex flex-1 flex-wrap items-center justify-end gap-2">
+            {isApproved && isAdministrator ? (
+              <NavLink to="/admin" className="btn-secondary">
+                Manage approvals
+              </NavLink>
+            ) : null}
             {isApproved ? (
               <button type="button" className="btn-secondary" onClick={handleLogout}>
                 Log out

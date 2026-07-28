@@ -20,6 +20,7 @@ import {
   CALENDAR_MONTHS,
   FILTER_YEARS,
   TABS,
+  weeksInMonth,
   periodLabel,
   type TabId,
 } from "../data";
@@ -70,6 +71,7 @@ function DashboardContent() {
     setPeriod,
     setMonth,
     setYear,
+    setWeekStart,
     loading,
     refreshing,
     error,
@@ -83,7 +85,8 @@ function DashboardContent() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const label = periodLabel(period, filters.month, filters.year);
+  const label = periodLabel(period, filters.month, filters.year, filters.weekStart);
+  const weekOptions = period === "week" ? weeksInMonth(filters.month, filters.year) : [];
 
   const avgClaimsPerPost =
     posts.length > 0 ? posts.reduce((sum, post) => sum + post.claims, 0) / posts.length : 0;
@@ -137,7 +140,7 @@ function DashboardContent() {
           />
         </div>
 
-        <header className="relative z-20 mb-8 flex flex-wrap items-start justify-between gap-4 pr-0 md:pr-36">
+        <header className="relative z-20 mb-8 space-y-4 pr-0 md:pr-36">
           <div className="space-y-2">
             <img
               src={`${import.meta.env.BASE_URL}images/second-course-logo.png`}
@@ -166,6 +169,49 @@ function DashboardContent() {
               <option value="month">Calendar month</option>
               <option value="year">Academic year</option>
             </select>
+            {period === "week" ? (
+              <>
+                <select
+                  className="period-select"
+                  value={filters.month}
+                  onChange={(event) => setMonth(Number(event.target.value))}
+                  aria-label="Month"
+                  disabled={refreshing}
+                >
+                  {CALENDAR_MONTHS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="period-select"
+                  value={filters.year}
+                  onChange={(event) => setYear(Number(event.target.value))}
+                  aria-label="Year"
+                  disabled={refreshing}
+                >
+                  {FILTER_YEARS.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="period-select"
+                  value={filters.weekStart}
+                  onChange={(event) => setWeekStart(event.target.value)}
+                  aria-label="Week"
+                  disabled={refreshing || weekOptions.length === 0}
+                >
+                  {weekOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : null}
             {period === "month" ? (
               <>
                 <select

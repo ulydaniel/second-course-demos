@@ -13,4 +13,5 @@ def read_impact(filters: dict = Depends(dashboard_filters)) -> ImpactResponse:
         period=filters["period"],
         month=filters["month"],
         year=filters["year"],
+        week_start=filters["week_start"],
     )

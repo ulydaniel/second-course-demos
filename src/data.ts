@@ -166,8 +166,17 @@ export const TABS: { id: TabId; label: string }[] = [
   { id: "exports", label: "Exports" },
 ];
 
-export function periodLabel(period: string, month?: number, year?: number) {
-  if (period === "week") return "Last 7 days";
+export function periodLabel(period: string, month?: number, year?: number, weekStart?: string) {
+  if (period === "week") {
+    const monday = parseWeekStart(weekStart);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    if (monday.getMonth() === sunday.getMonth() && monday.getFullYear() === sunday.getFullYear()) {
+      return `${names[monday.getMonth()]} ${monday.getDate()}–${sunday.getDate()}, ${sunday.getFullYear()}`;
+    }
+    return `${names[monday.getMonth()]} ${monday.getDate()} – ${names[sunday.getMonth()]} ${sunday.getDate()}, ${sunday.getFullYear()}`;
+  }
   if (period === "month") {
     const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const m = month && month >= 1 && month <= 12 ? month : 6;
@@ -179,6 +188,71 @@ export function periodLabel(period: string, month?: number, year?: number) {
     return `Aug ${start} – Jun ${start + 1}`;
   }
   return DATE_RANGE;
+}
+
+/** Monday YYYY-MM-DD for the demo week that contains the sample Jun 11–12 posts. */
+export const DEFAULT_WEEK_START = "2026-06-08";
+
+export function parseWeekStart(weekStart?: string): Date {
+  const raw = weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart) ? weekStart : DEFAULT_WEEK_START;
+  const [y, m, d] = raw.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  // Snap to Monday (JS: Sun=0 … Sat=6).
+  const day = date.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + offset);
+  return date;
+}
+
+function toIsoDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function formatWeekOption(monday: Date): { value: string; label: string } {
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const label =
+    monday.getMonth() === sunday.getMonth() && monday.getFullYear() === sunday.getFullYear()
+      ? `${names[monday.getMonth()]} ${monday.getDate()}–${sunday.getDate()}, ${sunday.getFullYear()}`
+      : `${names[monday.getMonth()]} ${monday.getDate()} – ${names[sunday.getMonth()]} ${sunday.getDate()}, ${sunday.getFullYear()}`;
+  return { value: toIsoDate(monday), label };
+}
+
+/** Every Mon–Sun week that overlaps the given calendar month. */
+export function weeksInMonth(month: number, year: number): { value: string; label: string }[] {
+  const m = month >= 1 && month <= 12 ? month : 6;
+  const y = year || 2026;
+  const first = new Date(y, m - 1, 1);
+  const last = new Date(y, m, 0);
+
+  const cursor = new Date(first);
+  const day = cursor.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  cursor.setDate(cursor.getDate() + offset);
+
+  const options: { value: string; label: string }[] = [];
+  while (cursor <= last) {
+    const sunday = new Date(cursor);
+    sunday.setDate(cursor.getDate() + 6);
+    if (sunday >= first) {
+      options.push(formatWeekOption(new Date(cursor)));
+    }
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return options;
+}
+
+/** Pick a week in month/year, preferring `preferred` when it still overlaps. */
+export function resolveWeekStart(month: number, year: number, preferred?: string): string {
+  const weeks = weeksInMonth(month, year);
+  if (weeks.length === 0) return DEFAULT_WEEK_START;
+  if (preferred && weeks.some((week) => week.value === preferred)) return preferred;
+  if (weeks.some((week) => week.value === DEFAULT_WEEK_START)) return DEFAULT_WEEK_START;
+  return weeks[0].value;
 }
 
 export const CALENDAR_MONTHS = [

@@ -14,6 +14,8 @@ import {
   CLAIMS_BY_MONTH,
   CLIMATE_MONTHS,
   CLIMATE_TCO2,
+  DATE_RANGE,
+  DEFAULT_WEEK_START,
   DEMAND_GRID,
   DEMAND_LOCATIONS,
   DEMAND_TIMES,
@@ -27,8 +29,9 @@ import {
   UNIVERSITY,
   WASTE_LBS,
   WASTE_MONTHS,
-  DATE_RANGE,
+  parseWeekStart,
   periodLabel,
+  resolveWeekStart,
 } from "../data";
 
 const fallbackData: DashboardData = {
@@ -56,6 +59,7 @@ const DEFAULT_FILTERS: DashboardFilters = {
   period: "year",
   month: 6,
   year: 2025,
+  weekStart: DEFAULT_WEEK_START,
 };
 
 type DashboardDataState = {
@@ -65,6 +69,7 @@ type DashboardDataState = {
   setPeriod: (period: DashboardPeriod) => void;
   setMonth: (month: number) => void;
   setYear: (year: number) => void;
+  setWeekStart: (weekStart: string) => void;
   loading: boolean;
   refreshing: boolean;
   error: string | null;
@@ -81,6 +86,7 @@ const DashboardDataContext = createContext<DashboardDataState>({
   setPeriod: () => undefined,
   setMonth: () => undefined,
   setYear: () => undefined,
+  setWeekStart: () => undefined,
   loading: true,
   refreshing: false,
   error: null,
@@ -106,6 +112,18 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
 
   const setPeriod = useCallback((period: DashboardPeriod) => {
     setFilters((current) => {
+      if (period === "week") {
+        const monday = parseWeekStart(current.weekStart || DEFAULT_WEEK_START);
+        const month = monday.getMonth() + 1;
+        const year = monday.getFullYear();
+        return {
+          ...current,
+          period,
+          month,
+          year,
+          weekStart: resolveWeekStart(month, year, current.weekStart || DEFAULT_WEEK_START),
+        };
+      }
       if (period === "month") {
         return { ...current, period, month: current.month || 6, year: current.year || 2026 };
       }
@@ -117,11 +135,33 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setMonth = useCallback((month: number) => {
-    setFilters((current) => ({ ...current, period: "month", month }));
+    setFilters((current) => {
+      if (current.period === "week") {
+        return {
+          ...current,
+          month,
+          weekStart: resolveWeekStart(month, current.year, current.weekStart),
+        };
+      }
+      return { ...current, period: "month", month };
+    });
   }, []);
 
   const setYear = useCallback((year: number) => {
-    setFilters((current) => ({ ...current, year }));
+    setFilters((current) => {
+      if (current.period === "week") {
+        return {
+          ...current,
+          year,
+          weekStart: resolveWeekStart(current.month, year, current.weekStart),
+        };
+      }
+      return { ...current, year };
+    });
+  }, []);
+
+  const setWeekStart = useCallback((weekStart: string) => {
+    setFilters((current) => ({ ...current, period: "week", weekStart }));
   }, []);
 
   const retry = useCallback(() => {
@@ -162,7 +202,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
           setState({
             data: {
               ...fallbackData,
-              dateRange: periodLabel(filters.period, filters.month, filters.year),
+              dateRange: periodLabel(filters.period, filters.month, filters.year, filters.weekStart),
             },
             loading: false,
             refreshing: false,
@@ -188,6 +228,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
         setPeriod,
         setMonth,
         setYear,
+        setWeekStart,
         retry,
       }}
     >
