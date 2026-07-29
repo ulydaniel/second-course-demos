@@ -15,9 +15,15 @@ UserStatus = Literal["pending", "approved", "rejected"]
 
 
 class UniversityOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
     id: str
     name: str
     slug: str
+    short_name: str | None = Field(alias="shortName", default=None)
+    primary_color: str | None = Field(alias="primaryColor", default=None)
+    accent_color: str | None = Field(alias="accentColor", default=None)
+    logo_url: str | None = Field(alias="logoUrl", default=None)
 
 
 class DashboardUserOut(BaseModel):
@@ -71,7 +77,12 @@ class LoginResponse(BaseModel):
 
 
 class CreateUserRequest(BaseModel):
-    """Developer pre-approves an email before the user registers."""
+    """Admin creates a pre-approved account with credentials in one step.
+
+    A password is required so the account has usable credentials immediately;
+    this closes the account-takeover path where an attacker could `register`
+    an approved-but-credential-less email and set the password themselves.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -80,6 +91,17 @@ class CreateUserRequest(BaseModel):
     job_title: JobTitle = Field(alias="jobTitle", default="staff")
     dashboard_role: DashboardRole = Field(alias="dashboardRole", default="viewer")
     university_id: str = Field(alias="universityId")
+    password: str = Field(min_length=8)
+
+    @model_validator(mode="after")
+    def password_must_be_strong(self) -> Self:
+        if len(self.password) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        has_letter = any(char.isalpha() for char in self.password)
+        has_digit = any(char.isdigit() for char in self.password)
+        if not (has_letter and has_digit):
+            raise ValueError("Password must include at least one letter and one number.")
+        return self
 
 
 class UpdateUserRequest(BaseModel):

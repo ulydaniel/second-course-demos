@@ -16,6 +16,13 @@ def _token_from_header(authorization: str | None) -> str | None:
     return token
 
 
+def get_bearer_token(
+    authorization: str | None = Header(default=None),
+) -> str | None:
+    """Return the raw Bearer token (used by logout to revoke it)."""
+    return _token_from_header(authorization)
+
+
 def get_current_user_optional(
     authorization: str | None = Header(default=None),
 ) -> DashboardUser | None:

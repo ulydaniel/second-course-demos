@@ -11,6 +11,10 @@ export type University = {
   id: string;
   name: string;
   slug: string;
+  shortName?: string | null;
+  primaryColor?: string | null;
+  accentColor?: string | null;
+  logoUrl?: string | null;
 };
 
 export type DashboardUser = {
@@ -57,6 +61,7 @@ export type CreateUserPayload = {
   jobTitle?: JobTitle;
   dashboardRole?: DashboardRole;
   universityId: string;
+  password: string;
 };
 
 function errorKindFromStatus(status: number): ApiErrorKind {

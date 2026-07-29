@@ -1,42 +1,43 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
-from app.dependencies.auth import get_current_user_optional
+from app.config import settings
+from app.dependencies.auth import get_bearer_token, get_current_user_optional
 from app.errors import raise_api_error
+from app.rate_limit import limiter
 from app.schemas.auth import (
     DashboardUserOut,
     LoginRequest,
     LoginResponse,
     RegisterRequest,
 )
-from app.services.auth import login, register_account, token_for
+from app.services.auth import login, register_account, revoke_token, token_for
 from app.services.user_store import DashboardUser, serialize_user, user_store
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=LoginResponse)
-def login_user(payload: LoginRequest) -> LoginResponse:
+@limiter.limit(settings.rate_limit_auth)
+def login_user(request: Request, payload: LoginRequest) -> LoginResponse:
     user = login(payload.email, payload.password)
     if user is None:
-        # Distinguish unknown email vs bad password for clearer portal UX.
-        if user_store.get_by_email(payload.email) is None:
-            raise_api_error(
-                404,
-                "not_registered",
-                "That email has not requested access yet.",
-            )
-        raise_api_error(
-            401,
-            "invalid_credentials",
-            "Incorrect email or password.",
-        )
+        # Uniform response for unknown email and bad password (no enumeration).
+        raise_api_error(401, "invalid_credentials", "Incorrect email or password.")
     return LoginResponse(token=token_for(user), status=user.status, user=serialize_user(user))
 
 
 @router.post("/register", response_model=LoginResponse)
-def register_user(payload: RegisterRequest) -> LoginResponse:
+@limiter.limit(settings.rate_limit_auth)
+def register_user(request: Request, payload: RegisterRequest) -> LoginResponse:
     if user_store.get_university(payload.university_id) is None:
         raise_api_error(400, "unknown_university", "Select a valid university.")
+    if user_store.get_by_email(payload.email) is not None:
+        # Never overwrite an existing account's credentials via registration.
+        raise_api_error(
+            409,
+            "email_taken",
+            "That email is already registered. Sign in instead, or contact an administrator.",
+        )
 
     user = register_account(
         email=payload.email,
@@ -49,8 +50,10 @@ def register_user(payload: RegisterRequest) -> LoginResponse:
 
 
 @router.post("/logout")
-def logout_user() -> dict[str, str]:
-    # Tokens are stateless; the client discards its stored session.
+def logout_user(token: str | None = Depends(get_bearer_token)) -> dict[str, str]:
+    # Revoke server-side so the token cannot be replayed after logout.
+    if token:
+        revoke_token(token)
     return {"status": "ok"}
 
 

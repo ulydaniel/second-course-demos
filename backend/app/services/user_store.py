@@ -1,16 +1,18 @@
-"""In-memory allowlist store for dashboard users and universities.
+"""SQLite-backed allowlist store for dashboard users and universities.
 
-This is the skeleton for the Firebase-backed allowlist described in the PRD
-(university AllowList document -> approved dashboard_users). Routes depend only
-on the `UserStore` protocol, so a FirebaseUserStore or SqlUserStore can drop in
-later without any route changes.
+Durable replacement for the previous in-memory skeleton: users, credentials
+(Fernet-wrapped hashes), and university tenants survive process restarts and are
+shared across workers. Routes and serializers still receive the lightweight
+`DashboardUser` / `University` dataclasses, so nothing downstream changed shape.
 """
 
 from dataclasses import dataclass
-from itertools import count
 from typing import Protocol
+from uuid import uuid4
 
-from app.config import settings
+from app.db.session import SessionLocal
+from app.models.dashboard_user import DashboardUser as DashboardUserModel
+from app.models.university import University as UniversityModel
 from app.schemas.auth import DashboardUserOut, UniversityOut
 
 
@@ -19,6 +21,10 @@ class University:
     id: str
     name: str
     slug: str
+    short_name: str | None = None
+    primary_color: str | None = None
+    accent_color: str | None = None
+    logo_url: str | None = None
 
 
 @dataclass
@@ -31,6 +37,7 @@ class DashboardUser:
     university_id: str | None
     status: str
     identity_uid: str | None = None
+    is_platform_admin: bool = False
 
 
 class UserStore(Protocol):
@@ -38,7 +45,9 @@ class UserStore(Protocol):
     def get_university(self, university_id: str) -> University | None: ...
     def get_by_email(self, email: str) -> DashboardUser | None: ...
     def get_by_id(self, user_id: str) -> DashboardUser | None: ...
-    def list_users(self, status: str | None = None) -> list[DashboardUser]: ...
+    def list_users(
+        self, status: str | None = None, university_id: str | None = None
+    ) -> list[DashboardUser]: ...
     def register(
         self,
         email: str,
@@ -54,6 +63,7 @@ class UserStore(Protocol):
         job_title: str,
         dashboard_role: str,
         university_id: str,
+        is_platform_admin: bool = False,
     ) -> DashboardUser: ...
     def update(
         self,
@@ -65,71 +75,82 @@ class UserStore(Protocol):
         job_title: str | None = None,
         full_name: str | None = None,
     ) -> DashboardUser | None: ...
+    def set_password_hash(self, email: str, password_hash: str) -> bool: ...
+    def get_password_hash(self, email: str) -> str | None: ...
 
 
 def _normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-class InMemoryUserStore:
-    """Process-local store, seeded on construction. Data resets on restart."""
+def _next_id() -> str:
+    return f"u{uuid4().hex[:12]}"
 
-    def __init__(self) -> None:
-        self._universities: dict[str, University] = {}
-        self._users: dict[str, DashboardUser] = {}
-        self._ids = count(1)
-        self._seed()
 
-    def _next_id(self) -> str:
-        return f"u{next(self._ids)}"
+def _to_university(row: UniversityModel) -> University:
+    return University(
+        id=row.id,
+        name=row.name,
+        slug=row.slug,
+        short_name=row.short_name,
+        primary_color=row.primary_color,
+        accent_color=row.accent_color,
+        logo_url=row.logo_url,
+    )
 
-    def _seed(self) -> None:
-        from app.services.identity import identity
 
-        default = University(id="sdsu", name=settings.university_name, slug="sdsu")
-        seeded = [
-            default,
-            University(id="ucsd", name="UC San Diego", slug="ucsd"),
-            University(id="csulb", name="CSU Long Beach", slug="csulb"),
-        ]
-        for university in seeded:
-            self._universities[university.id] = university
+def _to_user(row: DashboardUserModel) -> DashboardUser:
+    return DashboardUser(
+        id=row.id,
+        email=row.email,
+        full_name=row.full_name,
+        job_title=row.job_title,
+        dashboard_role=row.dashboard_role,
+        university_id=row.university_id,
+        status=row.status,
+        identity_uid=row.identity_uid,
+        is_platform_admin=bool(row.is_platform_admin),
+    )
 
-        for email in settings.dev_admin_email_list:
-            uid = identity.create_account(email, settings.dev_admin_password)
-            user = DashboardUser(
-                id=self._next_id(),
-                email=email,
-                full_name="Second Course Developer",
-                job_title="admin",
-                dashboard_role="administrator",
-                university_id=default.id,
-                status="approved",
-                identity_uid=uid,
-            )
-            self._users[user.id] = user
+
+class SqlUserStore:
+    """Repository over the SQLAlchemy session; one session per call."""
 
     def list_universities(self) -> list[University]:
-        return list(self._universities.values())
+        with SessionLocal() as db:
+            rows = db.query(UniversityModel).all()
+            return [_to_university(row) for row in rows]
 
     def get_university(self, university_id: str) -> University | None:
-        return self._universities.get(university_id)
+        with SessionLocal() as db:
+            row = db.get(UniversityModel, university_id)
+            return _to_university(row) if row else None
 
     def get_by_email(self, email: str) -> DashboardUser | None:
         target = _normalize_email(email)
-        for user in self._users.values():
-            if user.email == target:
-                return user
-        return None
+        with SessionLocal() as db:
+            row = (
+                db.query(DashboardUserModel)
+                .filter(DashboardUserModel.email == target)
+                .first()
+            )
+            return _to_user(row) if row else None
 
     def get_by_id(self, user_id: str) -> DashboardUser | None:
-        return self._users.get(user_id)
+        with SessionLocal() as db:
+            row = db.get(DashboardUserModel, user_id)
+            return _to_user(row) if row else None
 
-    def list_users(self, status: str | None = None) -> list[DashboardUser]:
-        users = list(self._users.values())
-        if status is not None:
-            users = [user for user in users if user.status == status]
-        return users
+    def list_users(
+        self, status: str | None = None, university_id: str | None = None
+    ) -> list[DashboardUser]:
+        with SessionLocal() as db:
+            query = db.query(DashboardUserModel)
+            if status is not None:
+                query = query.filter(DashboardUserModel.status == status)
+            if university_id is not None:
+                query = query.filter(DashboardUserModel.university_id == university_id)
+            return [_to_user(row) for row in query.all()]
 
     def register(
         self,
@@ -139,18 +160,22 @@ class InMemoryUserStore:
         university_id: str,
         identity_uid: str | None = None,
     ) -> DashboardUser:
-        user = DashboardUser(
-            id=self._next_id(),
-            email=_normalize_email(email),
-            full_name=full_name,
-            job_title=job_title,
-            dashboard_role="viewer",
-            university_id=university_id,
-            status="pending",
-            identity_uid=identity_uid,
-        )
-        self._users[user.id] = user
-        return user
+        with SessionLocal() as db:
+            row = DashboardUserModel(
+                id=_next_id(),
+                email=_normalize_email(email),
+                full_name=full_name,
+                job_title=job_title,
+                dashboard_role="viewer",
+                university_id=university_id,
+                status="pending",
+                identity_uid=identity_uid,
+                is_platform_admin=False,
+            )
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            return _to_user(row)
 
     def create_approved(
         self,
@@ -159,18 +184,23 @@ class InMemoryUserStore:
         job_title: str,
         dashboard_role: str,
         university_id: str,
+        is_platform_admin: bool = False,
     ) -> DashboardUser:
-        user = DashboardUser(
-            id=self._next_id(),
-            email=_normalize_email(email),
-            full_name=full_name,
-            job_title=job_title,
-            dashboard_role=dashboard_role,
-            university_id=university_id,
-            status="approved",
-        )
-        self._users[user.id] = user
-        return user
+        with SessionLocal() as db:
+            row = DashboardUserModel(
+                id=_next_id(),
+                email=_normalize_email(email),
+                full_name=full_name,
+                job_title=job_title,
+                dashboard_role=dashboard_role,
+                university_id=university_id,
+                status="approved",
+                is_platform_admin=is_platform_admin,
+            )
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            return _to_user(row)
 
     def update(
         self,
@@ -182,27 +212,62 @@ class InMemoryUserStore:
         job_title: str | None = None,
         full_name: str | None = None,
     ) -> DashboardUser | None:
-        user = self._users.get(user_id)
-        if user is None:
-            return None
-        if status is not None:
-            user.status = status
-        if dashboard_role is not None:
-            user.dashboard_role = dashboard_role
-        if university_id is not None:
-            user.university_id = university_id
-        if job_title is not None:
-            user.job_title = job_title
-        if full_name is not None:
-            user.full_name = full_name
-        return user
+        with SessionLocal() as db:
+            row = db.get(DashboardUserModel, user_id)
+            if row is None:
+                return None
+            if status is not None:
+                row.status = status
+            if dashboard_role is not None:
+                row.dashboard_role = dashboard_role
+            if university_id is not None:
+                row.university_id = university_id
+            if job_title is not None:
+                row.job_title = job_title
+            if full_name is not None:
+                row.full_name = full_name
+            db.commit()
+            db.refresh(row)
+            return _to_user(row)
+
+    def set_password_hash(self, email: str, password_hash: str) -> bool:
+        target = _normalize_email(email)
+        with SessionLocal() as db:
+            row = (
+                db.query(DashboardUserModel)
+                .filter(DashboardUserModel.email == target)
+                .first()
+            )
+            if row is None:
+                return False
+            row.password_hash = password_hash
+            db.commit()
+            return True
+
+    def get_password_hash(self, email: str) -> str | None:
+        target = _normalize_email(email)
+        with SessionLocal() as db:
+            row = (
+                db.query(DashboardUserModel)
+                .filter(DashboardUserModel.email == target)
+                .first()
+            )
+            return row.password_hash if row else None
 
 
-user_store: UserStore = InMemoryUserStore()
+user_store: UserStore = SqlUserStore()
 
 
 def serialize_university(university: University) -> UniversityOut:
-    return UniversityOut(id=university.id, name=university.name, slug=university.slug)
+    return UniversityOut(
+        id=university.id,
+        name=university.name,
+        slug=university.slug,
+        short_name=university.short_name,
+        primary_color=university.primary_color,
+        accent_color=university.accent_color,
+        logo_url=university.logo_url,
+    )
 
 
 def serialize_user(user: DashboardUser) -> DashboardUserOut:
