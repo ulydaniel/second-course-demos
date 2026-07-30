@@ -20,11 +20,25 @@ import {
   updatePantry,
 } from "../../api/resources";
 import { useAuth } from "../../context/AuthContext";
+import { CALENDAR_MONTHS, FILTER_YEARS } from "../../data";
 
-const MONTH_LABEL = "June 2026";
-const MONTH_YEAR = 2026;
-const MONTH_INDEX = 5; // June (0-based)
+/** Demo events are seeded for this month only (day-of-month keys). */
+const DEMO_EVENT_MONTH = 6;
+const DEMO_EVENT_YEAR = 2026;
+const DEFAULT_VIEW_MONTH = DEMO_EVENT_MONTH;
+const DEFAULT_VIEW_YEAR = DEMO_EVENT_YEAR;
+const DEFAULT_SELECTED_DAY = 22;
 const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+const MIN_VIEW_YEAR = FILTER_YEARS[0];
+const MAX_VIEW_YEAR = FILTER_YEARS[FILTER_YEARS.length - 1];
+
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function clampDay(day: number, year: number, month: number) {
+  return Math.min(day, daysInMonth(year, month));
+}
 const WEEKDAY_OPTIONS = [
   { day: "Sun", weekday: 0 },
   { day: "Mon", weekday: 1 },
@@ -554,8 +568,6 @@ function BulletinEditor({
 
 export function ResourcesScreen() {
   const { canEditResources } = useAuth();
-  const firstWeekday = new Date(MONTH_YEAR, MONTH_INDEX, 1).getDay();
-  const daysInMonth = new Date(MONTH_YEAR, MONTH_INDEX + 1, 0).getDate();
 
   const [pantries, setPantries] = useState<Pantry[]>(() => PANTRIES.map((p) => ({ ...p, hours: [...p.hours] })));
   const [events, setEvents] = useState<Record<number, SpecialEvent[]>>(() =>
@@ -570,7 +582,9 @@ export function ResourcesScreen() {
     BULLETIN.map((item) => ({ ...item, content: [...item.content] })),
   );
 
-  const [selected, setSelected] = useState(22);
+  const [viewMonth, setViewMonth] = useState(DEFAULT_VIEW_MONTH); // 1–12
+  const [viewYear, setViewYear] = useState(DEFAULT_VIEW_YEAR);
+  const [selected, setSelected] = useState(DEFAULT_SELECTED_DAY);
   const [openItem, setOpenItem] = useState<BulletinItem | null>(null);
   const [editingPantryIndex, setEditingPantryIndex] = useState<number | "new" | null>(null);
   const [eventEditor, setEventEditor] = useState<"new" | number | null>(null);
@@ -597,18 +611,40 @@ export function ResourcesScreen() {
     };
   }, []);
 
+  const monthIndex = viewMonth - 1;
+  const firstWeekday = new Date(viewYear, monthIndex, 1).getDay();
+  const monthLength = daysInMonth(viewYear, viewMonth);
+  const showingDemoEvents = viewMonth === DEMO_EVENT_MONTH && viewYear === DEMO_EVENT_YEAR;
+  const canGoPrev = viewYear > MIN_VIEW_YEAR || viewMonth > 1;
+  const canGoNext = viewYear < MAX_VIEW_YEAR || viewMonth < 12;
+
+  function goToMonth(year: number, month: number) {
+    setViewYear(year);
+    setViewMonth(month);
+    setSelected((day) => clampDay(day, year, month));
+  }
+
+  function shiftMonth(delta: number) {
+    const date = new Date(viewYear, monthIndex + delta, 1);
+    const nextYear = date.getFullYear();
+    const nextMonth = date.getMonth() + 1;
+    if (nextYear < MIN_VIEW_YEAR || nextYear > MAX_VIEW_YEAR) return;
+    goToMonth(nextYear, nextMonth);
+  }
+
   const cells: (number | null)[] = [
     ...Array(firstWeekday).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+    ...Array.from({ length: monthLength }, (_, i) => i + 1),
   ];
 
-  const selectedWeekday = new Date(MONTH_YEAR, MONTH_INDEX, selected).getDay();
+  const selectedWeekday = new Date(viewYear, monthIndex, selected).getDay();
   const selectedPantries = pantriesOpenOn(pantries, selectedWeekday);
-  const selectedSpecial = events[selected] ?? [];
-  const selectedDayLabel = new Date(MONTH_YEAR, MONTH_INDEX, selected).toLocaleDateString("en-US", {
+  const selectedSpecial = showingDemoEvents ? (events[selected] ?? []) : [];
+  const selectedDayLabel = new Date(viewYear, monthIndex, selected).toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
+    year: "numeric",
   });
 
   return (
@@ -670,7 +706,52 @@ export function ResourcesScreen() {
 
       {/* Calendar — capped width so it stays phone-sized in the dashboard embed */}
       <div>
-        <h3 className="mb-2 font-display text-xl">{MONTH_LABEL}</h3>
+        <div className="mb-2 flex max-w-[16rem] items-center gap-1">
+          <button
+            type="button"
+            aria-label="Previous month"
+            disabled={!canGoPrev}
+            onClick={() => shiftMonth(-1)}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border-2 border-black bg-white text-lg font-bold leading-none disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ‹
+          </button>
+          <div className="flex min-w-0 flex-1 gap-1">
+            <select
+              className="period-select min-w-0 flex-1 px-1.5 py-1 text-xs"
+              value={viewMonth}
+              onChange={(event) => goToMonth(viewYear, Number(event.target.value))}
+              aria-label="Month"
+            >
+              {CALENDAR_MONTHS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="period-select shrink-0 px-1.5 py-1 text-xs"
+              value={viewYear}
+              onChange={(event) => goToMonth(Number(event.target.value), viewMonth)}
+              aria-label="Year"
+            >
+              {FILTER_YEARS.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            aria-label="Next month"
+            disabled={!canGoNext}
+            onClick={() => shiftMonth(1)}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border-2 border-black bg-white text-lg font-bold leading-none disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ›
+          </button>
+        </div>
         <div className="grid gap-3 md:grid-cols-[minmax(0,16rem)_1fr] md:items-start">
           <div className="card max-w-[16rem] p-2.5">
             <div className="mb-0.5 grid grid-cols-7 gap-0.5 text-center text-[10px] font-semibold text-black/50">
@@ -681,9 +762,9 @@ export function ResourcesScreen() {
             <div className="grid grid-cols-7 gap-0.5">
               {cells.map((day, i) => {
                 if (day === null) return <div key={`e${i}`} />;
-                const weekday = new Date(MONTH_YEAR, MONTH_INDEX, day).getDay();
+                const weekday = new Date(viewYear, monthIndex, day).getDay();
                 const hasPantry = pantriesOpenOn(pantries, weekday).length > 0;
-                const hasEvent = Boolean(events[day]?.length);
+                const hasEvent = showingDemoEvents && Boolean(events[day]?.length);
                 const isSelected = day === selected;
                 return (
                   <button
@@ -718,7 +799,7 @@ export function ResourcesScreen() {
           <div className="card p-3">
             <div className="mb-2 flex items-start justify-between gap-2">
               <h4 className="font-display text-lg">{selectedDayLabel}</h4>
-              {canEditResources ? (
+              {canEditResources && showingDemoEvents ? (
                 <EditChip label="+" onClick={() => setEventEditor("new")} />
               ) : null}
             </div>
