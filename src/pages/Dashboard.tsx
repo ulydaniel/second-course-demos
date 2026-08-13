@@ -345,18 +345,12 @@ function DashboardContent() {
 
         <header className="relative z-20 mb-8 space-y-4 pr-0 md:pr-36">
           <div className="space-y-2">
-            <img
-              src={`${import.meta.env.BASE_URL}images/second-course-logo.png`}
-              alt="Second Course"
-              className="h-10 w-auto md:h-12"
-            />
+            <p className="font-display text-2xl leading-none text-black md:text-3xl">
+              {user?.university?.name ?? university}
+            </p>
             <h1 className="font-display text-3xl text-black md:text-4xl">University Dashboard</h1>
-            <p className="font-sans text-black/80">{university}</p>
             {user ? (
-              <p className="font-sans text-xs text-black/60">
-                Signed in as {user.email}
-                {user.university ? ` · ${user.university.name}` : ""}
-              </p>
+              <p className="font-sans text-xs text-black/60">Signed in as {user.email}</p>
             ) : null}
           </div>
 
