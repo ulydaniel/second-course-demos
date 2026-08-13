@@ -131,40 +131,106 @@ export function PostsByLocationChart() {
   );
 }
 
+type ClaimViewRow = {
+  row: string;
+  title: string;
+  location: string;
+  views: number;
+  claims: number;
+  rate: number;
+};
+
+function ClaimsViewsTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: ClaimViewRow }>;
+}) {
+  if (!active || !payload?.[0]) return null;
+  const row = payload[0].payload;
+  return (
+    <div className="rounded-lg border-2 border-black bg-white px-3 py-2 font-sans text-xs">
+      <p className="font-semibold text-black">{row.title}</p>
+      {row.location && row.location !== "—" ? <p className="text-black/70">{row.location}</p> : null}
+      <p className="mt-1 text-black/80">
+        {row.views} views · {row.claims} claims · {row.rate}% claimed
+      </p>
+    </div>
+  );
+}
+
 export function ClaimsVsViewsChart() {
   const { data } = useDashboardData();
-  const chartData = [...data.posts]
-    .sort((a, b) => b.views - a.views)
-    .slice(0, 12)
-    .map((post) => {
+  const chartData: ClaimViewRow[] = [...data.posts]
+    .sort((a, b) => b.views - a.views || b.claims - a.claims)
+    .map((post, index) => {
       const title = prettyPostTitle(post);
       return {
-        label: shortPostLabel(title),
-        full: title,
+        row: `${index + 1}. ${shortPostLabel(title, 28)}`,
+        title,
+        location: post.location,
         views: post.views,
         claims: post.claims,
+        rate: post.claimRate,
       };
     });
 
+  const rowPx = 38;
+  const chartHeight = Math.max(220, chartData.length * rowPx + 36);
+
   return (
-    <ChartShell id="chart-claims-vs-views" title="Claims vs views by post" caption="Top posts in this period">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={48} />
-          <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip
-            labelFormatter={(_label, payload) => {
-              const row = payload?.[0]?.payload as { full?: string } | undefined;
-              return row?.full ?? "";
-            }}
-          />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="views" name="Views" fill="#EDDBC3" stroke="#18181b" strokeWidth={1} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="claims" name="Claims" fill="#6EC100" radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-    </ChartShell>
+    <div className="chart-export" id="chart-claims-vs-views">
+      <h3 className="font-display text-lg text-black mb-3">Claims vs views by post</h3>
+      {chartData.length === 0 ? (
+        <p className="font-sans text-sm text-black/70">No posts in this period to compare.</p>
+      ) : (
+        <>
+          <div className="mb-2 flex flex-wrap gap-4 font-sans text-xs text-black/70">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-4 rounded-sm border border-black bg-[#EDDBC3]" />
+              Views
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-4 rounded-sm border border-black bg-scGreen" />
+              Claims
+            </span>
+          </div>
+          <div className="max-h-80 overflow-y-auto overflow-x-hidden pr-1">
+            <div style={{ height: chartHeight }}>
+              <ResponsiveContainer width="100%" height={chartHeight}>
+                <BarChart
+                  data={chartData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 16, bottom: 4, left: 4 }}
+                  barCategoryGap={10}
+                  barGap={2}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
+                  <XAxis type="number" tick={{ fontSize: 11 }} />
+                  <YAxis
+                    type="category"
+                    dataKey="row"
+                    width={168}
+                    interval={0}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <Tooltip content={<ClaimsViewsTooltip />} />
+                  <Bar dataKey="views" name="Views" fill="#EDDBC3" stroke="#18181b" strokeWidth={1} radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="claims" name="Claims" fill="#6EC100" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </>
+      )}
+      <p className="mt-2 text-xs text-black/60 font-sans">
+        {chartData.length > 6
+          ? `Scroll the chart to see all ${chartData.length} posts. Hover a bar for the full name.`
+          : "Hover a bar for the full post name."}{" "}
+        Sorted by views.
+      </p>
+    </div>
   );
 }
 
