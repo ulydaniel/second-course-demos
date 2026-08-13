@@ -712,12 +712,12 @@ function DashboardContent() {
               training to increase campus coverage.
             </div>
           ) : null}
-          <h2 className="font-display text-xl">Staff posting activity</h2>
+          <h2 className="font-display text-xl">Department Posting Activity</h2>
           <div className="card overflow-x-auto p-0">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Staff</th>
+                  <th>Department</th>
                   <th>Role</th>
                   <th>Posts</th>
                   <th>Last post</th>

@@ -1,6 +1,6 @@
 """Metrics source selector: Firestore when available, else bundled mock data.
 
-Keeps a single entry point so overview/posts/impact don't each duplicate the
+Keeps a single entry point so overview/posts/staff/impact don't each duplicate the
 fallback logic. Firestore is the source of truth (DATA_CONTRACT.md); the mock
 snapshot is only a last resort so the demo still boots offline or for campuses
 that aren't mirrored in Firestore.

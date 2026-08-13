@@ -15,7 +15,7 @@ Demographics are aggregated with per-campus `minCellSize` suppression and never
 expose an individual student (no uid/email/displayName leaves this module).
 
 `build_snapshot()` returns a dict with the same keys the mock snapshot exposes so
-overview/posts/impact stay identical, or None when Firestore is unavailable.
+overview/posts/staff/impact stay identical, or None when Firestore is unavailable.
 """
 
 from __future__ import annotations
@@ -357,6 +357,8 @@ def _compute_snapshot(cols, university_id, period, month, year, week_start) -> d
     claims_by_hour = _series_by_hour(claims_in, tz)
     locations = _locations(posts_in, claims_in, post_by_id)
     post_records = _post_records(posts_in, claims_by_post, lbs_by_post, first_by_post, tz)
+    users_by_id = {u["id"]: u for u in cols.get("users") or [] if u.get("id")}
+    staff = _staff_records(posts_in, first_by_post, users_by_id, tz)
     waste_months, waste_lbs, climate_tco2 = _waste_series(claims_in, claim_weight, cfg, tz)
 
     summary = {
@@ -380,6 +382,7 @@ def _compute_snapshot(cols, university_id, period, month, year, week_start) -> d
         "claims_by_hour": claims_by_hour,
         "locations": locations,
         "posts": post_records,
+        "staff": staff,
         "waste_months": waste_months,
         "waste_lbs": waste_lbs,
         "climate_months": waste_months,
@@ -473,6 +476,109 @@ def _post_records(posts_in, claims_by_post, lbs_by_post, first_by_post, tz):
             }
         )
     return records
+
+
+# Display roles for known posting units (sandbox orgType is often wrong).
+_DEPT_ROLE_BY_NAME = {
+    "veterans center": "University Dept",
+    "campus dining": "University Dept",
+    "student health services": "University Dept",
+    "pride center": "University Dept",
+    "grad student association": "University Dept",
+    "graduate student association": "University Dept",
+    "computer science society": "Student Club",
+    "residential education": "University Dept",
+    "associated students": "University Dept",
+}
+
+_ORGTYPE_DISPLAY = {
+    "student club": "Student Club",
+    "greek life": "Greek Life",
+    "cultural org": "Cultural Org",
+    "athletics": "Athletics",
+    "academic dept": "Academic Dept",
+    "university dept / dining": "University Dept",
+    "university dept": "University Dept",
+    "other": "Other",
+}
+
+
+def _department_role(name: str, org_type: Any) -> str:
+    mapped = _DEPT_ROLE_BY_NAME.get((name or "").strip().lower())
+    if mapped:
+        return mapped
+    if isinstance(org_type, str) and org_type.strip():
+        return _ORGTYPE_DISPLAY.get(org_type.strip().lower(), org_type.strip())
+    return "Organizer"
+
+
+def _staff_records(posts_in, first_by_post, users_by_id, tz):
+    """Top organizers: group posts by posterId (DATA_CONTRACT.md §5)."""
+    groups: dict[str, dict[str, Any]] = {}
+    for p in posts_in:
+        uid = p.get("posterId") or p.get("posterName") or "unknown"
+        name = p.get("posterName") or "Unknown organizer"
+        dt = _to_dt(p.get("createdAt"))
+        g = groups.setdefault(uid, {"name": name, "posts": 0, "last_dt": None, "firsts": []})
+        g["posts"] += 1
+        if name and name != "Unknown organizer":
+            g["name"] = name
+        if dt is not None and (g["last_dt"] is None or dt > g["last_dt"]):
+            g["last_dt"] = dt
+        post_id = p.get("id")
+        if post_id in first_by_post:
+            g["firsts"].append(first_by_post[post_id] / 60)
+
+    latest = max((g["last_dt"] for g in groups.values() if g["last_dt"]), default=None)
+    ref = latest or datetime.now(timezone.utc)
+
+    rows = []
+    for uid, g in groups.items():
+        user = users_by_id.get(uid) or {}
+        last_dt = g["last_dt"]
+        avg = round(sum(g["firsts"]) / len(g["firsts"]), 1) if g["firsts"] else 0.0
+        rows.append(
+            {
+                "name": g["name"],
+                "role": _department_role(g["name"], user.get("orgType")),
+                "posts": g["posts"],
+                "last_post": _relative_last_post(last_dt, ref, tz) if last_dt else "—",
+                "avg_claim_min": avg,
+                "utilization": _staff_utilization(last_dt, ref),
+            }
+        )
+    rows.sort(key=lambda r: (-r["posts"], r["name"]))
+    return rows
+
+
+def _staff_utilization(last_dt: datetime | None, ref: datetime) -> str:
+    if last_dt is None:
+        return "low"
+    days = (ref.astimezone(timezone.utc) - last_dt.astimezone(timezone.utc)).days
+    if days <= 7:
+        return "high"
+    if days <= 21:
+        return "medium"
+    return "low"
+
+
+def _relative_last_post(last_dt: datetime, ref: datetime, tz) -> str:
+    local = last_dt.astimezone(tz)
+    ref_local = ref.astimezone(tz)
+    days = (ref_local.date() - local.date()).days
+    if days <= 0:
+        return f"Today, {_clock(local)}"
+    if days == 1:
+        return f"Yesterday, {_clock(local)}"
+    if days < 14:
+        return f"{days} days ago"
+    return _human_time(local)
+
+
+def _clock(local: datetime) -> str:
+    hour12 = ((local.hour + 11) % 12) + 1
+    ampm = "a" if local.hour < 12 else "p"
+    return f"{hour12}:{local.minute:02d}{ampm}"
 
 
 def _human_time(local: datetime) -> str:
