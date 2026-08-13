@@ -850,3 +850,62 @@ def get_snapshot(
     else:
         snap = deepcopy(_SNAPSHOTS["year"])
     return _apply_university(snap, university_id)
+
+
+def _monday_of(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _academic_start_year(day: date) -> int:
+    """Academic year labeled by its August start (Aug Y … Jul Y+1 → Y)."""
+    return day.year if day.month >= 8 else day.year - 1
+
+
+def available_periods(_university_id: str | None = None) -> dict[str, Any]:
+    """Return week / month / academic-year keys that have demo activity.
+
+    Built from sample post timestamps plus the academic-year series months
+    (Aug–Jun) so month/year filters match non-empty mock snapshots. Weeks are
+    limited to Mondays that contain at least one sample post — other weeks only
+    show fabricated placeholders.
+    """
+    month_keys: set[tuple[int, int]] = set()
+    week_keys: set[str] = set()
+    academic_years: set[int] = set()
+
+    for post in _YEAR["posts"]:
+        try:
+            posted = datetime.fromisoformat(post["posted_at"]).date()
+        except ValueError:
+            continue
+        month_keys.add((posted.year, posted.month))
+        week_keys.add(_monday_of(posted).isoformat())
+        academic_years.add(_academic_start_year(posted))
+
+    # Academic-year series covers Aug → Jun for the primary demo year (2025).
+    # Surface those calendar months so month-mode filters stay useful.
+    demo_ay = 2025
+    academic_years.add(demo_ay)
+    for month in (8, 9, 10, 11, 12):
+        month_keys.add((demo_ay, month))
+    for month in (1, 2, 3, 4, 5, 6):
+        month_keys.add((demo_ay + 1, month))
+
+    months = [{"year": y, "month": m} for y, m in sorted(month_keys)]
+    weeks = sorted(week_keys)
+    ay_list = sorted(academic_years)
+
+    periods: list[str] = []
+    if weeks:
+        periods.append("week")
+    if months:
+        periods.append("month")
+    if ay_list:
+        periods.append("year")
+
+    return {
+        "months": months,
+        "weeks": weeks,
+        "academic_years": ay_list,
+        "periods": periods,
+    }

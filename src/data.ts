@@ -125,6 +125,104 @@ export const POSTS: PostRecord[] = [
   },
 ];
 
+const GENERATED_TITLE = /^(untitled(\s+post)?|none|n\/?a|null|test|asdf|post[_-]?[a-z0-9]+|p-\d+)$/i;
+const UUIDISH =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const FOOD_KEYWORDS = [
+  "sushi",
+  "poke",
+  "pizza",
+  "taco",
+  "quesadilla",
+  "sandwich",
+  "sub",
+  "wrap",
+  "burger",
+  "salad",
+  "soup",
+  "ramen",
+  "breakfast",
+  "bagel",
+  "donut",
+  "muffin",
+  "pastry",
+  "cookie",
+  "fruit",
+  "snack",
+  "coffee",
+  "burrito",
+  "bowl",
+  "pasta",
+  "catering",
+];
+
+function looksLikeGeneratedTitle(title: string): boolean {
+  const text = title.trim();
+  if (!text) return true;
+  if (GENERATED_TITLE.test(text) || UUIDISH.test(text)) return true;
+  const compact = text.replace(/[\s_-]+/g, "");
+  return !text.includes(" ") && /^post/i.test(text) && /^[a-z0-9]+$/i.test(compact) && text.length <= 40;
+}
+
+function mealWindowFromPostedAt(postedAt?: string): string | null {
+  if (!postedAt) return null;
+  const hourMatch = postedAt.match(/T(\d{2})/);
+  if (!hourMatch) return null;
+  const hour = Number(hourMatch[1]);
+  if (hour >= 6 && hour < 11) return "Breakfast";
+  if (hour >= 11 && hour < 15) return "Lunch";
+  if (hour >= 15 && hour < 17) return "Afternoon";
+  if (hour >= 17 && hour < 21) return "Dinner";
+  return "Evening";
+}
+
+function foodPhrase(haystack: string): string | null {
+  const hay = haystack.toLowerCase();
+  for (const kw of FOOD_KEYWORDS) {
+    const idx = hay.indexOf(kw);
+    if (idx !== -1 && (idx === 0 || !/[a-z0-9]/i.test(hay[idx - 1] ?? ""))) {
+      return kw.charAt(0).toUpperCase() + kw.slice(1);
+    }
+  }
+  return null;
+}
+
+/** Replace auto-generated IDs (post_00430kise) with a readable leftover-food label. */
+export function prettyPostTitle(post: {
+  title: string;
+  description?: string;
+  location?: string;
+  postedAt?: string;
+}): string {
+  const raw = (post.title || "").trim();
+  const desc = (post.description || "").trim();
+  if (!looksLikeGeneratedTitle(raw)) {
+    return raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  }
+  if (desc) {
+    const sentence = desc.split(/[.!?\n]/, 1)[0]?.trim() ?? "";
+    if (sentence && !looksLikeGeneratedTitle(sentence) && sentence.length >= 8 && sentence.length <= 90) {
+      return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+    }
+  }
+  const food = foodPhrase(`${raw} ${desc}`);
+  const meal = mealWindowFromPostedAt(post.postedAt);
+  const loc = post.location && post.location !== "—" ? post.location : null;
+  if (food && loc) return `${food} leftovers · ${loc}`;
+  if (food && meal) return `${meal} ${food.toLowerCase()}`;
+  if (food) return `${food} leftovers`;
+  if (meal && loc) return `${meal} leftovers · ${loc}`;
+  if (loc) return `Leftover food · ${loc}`;
+  if (meal) return `${meal} leftover food`;
+  return "Campus leftover food";
+}
+
+export function shortPostLabel(title: string, max = 22): string {
+  if (title.length <= max) return title;
+  return `${title.slice(0, max - 1).trimEnd()}…`;
+}
+
 export const WASTE_MONTHS = ["Aug", "Oct", "Dec", "Feb", "Apr", "Jun"];
 export const WASTE_LBS = [180, 310, 420, 520, 680, 820];
 export const CLIMATE_MONTHS = ["Aug", "Oct", "Dec", "Feb", "Apr", "Jun"];
@@ -277,3 +375,160 @@ export const ACADEMIC_YEAR_OPTIONS = [
   { value: 2024, label: "Aug 2024 – Jun 2025" },
   { value: 2025, label: "Aug 2025 – Jun 2026" },
 ] as const;
+
+export type AvailableMonthOption = { year: number; month: number };
+
+/** Restrict calendar weeks to Mondays that have activity. */
+export function weeksWithData(
+  month: number,
+  year: number,
+  availableWeeks?: string[],
+): { value: string; label: string }[] {
+  const all = weeksInMonth(month, year);
+  if (!availableWeeks || availableWeeks.length === 0) return all;
+  const allowed = new Set(availableWeeks);
+  return all.filter((week) => allowed.has(week.value));
+}
+
+export function resolveWeekStartWithData(
+  month: number,
+  year: number,
+  preferred: string | undefined,
+  availableWeeks?: string[],
+): string {
+  const weeks = weeksWithData(month, year, availableWeeks);
+  if (weeks.length === 0) {
+    if (availableWeeks && availableWeeks.length > 0) return availableWeeks[0];
+    return resolveWeekStart(month, year, preferred);
+  }
+  if (preferred && weeks.some((week) => week.value === preferred)) return preferred;
+  if (weeks.some((week) => week.value === DEFAULT_WEEK_START)) return DEFAULT_WEEK_START;
+  return weeks[0].value;
+}
+
+export function monthOptionsWithData(
+  year: number,
+  availableMonths?: AvailableMonthOption[],
+): { value: number; label: string }[] {
+  if (!availableMonths || availableMonths.length === 0) {
+    return CALENDAR_MONTHS.map((option) => ({ value: option.value, label: option.label }));
+  }
+  const allowed = new Set(
+    availableMonths.filter((entry) => entry.year === year).map((entry) => entry.month),
+  );
+  return CALENDAR_MONTHS.filter((option) => allowed.has(option.value)).map((option) => ({
+    value: option.value,
+    label: option.label,
+  }));
+}
+
+export function yearOptionsWithData(
+  availableMonths?: AvailableMonthOption[],
+  fallbackYears: readonly number[] = FILTER_YEARS,
+): number[] {
+  if (!availableMonths || availableMonths.length === 0) return [...fallbackYears];
+  return [...new Set(availableMonths.map((entry) => entry.year))].sort((a, b) => a - b);
+}
+
+/** Calendar months that overlap activity weeks (for week-mode month/year selects). */
+export function monthsOverlappingWeeks(availableWeeks?: string[]): AvailableMonthOption[] {
+  if (!availableWeeks || availableWeeks.length === 0) return [];
+  const keys = new Set<string>();
+  const result: AvailableMonthOption[] = [];
+  for (const weekStart of availableWeeks) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) continue;
+    const [y, m, d] = weekStart.split("-").map(Number);
+    const monday = new Date(y, m - 1, d);
+    for (let offset = 0; offset < 7; offset += 1) {
+      const day = new Date(monday);
+      day.setDate(monday.getDate() + offset);
+      const year = day.getFullYear();
+      const month = day.getMonth() + 1;
+      const key = `${year}-${month}`;
+      if (keys.has(key)) continue;
+      keys.add(key);
+      result.push({ year, month });
+    }
+  }
+  return result.sort((a, b) => a.year - b.year || a.month - b.month);
+}
+
+export function academicYearOptionsWithData(
+  availableAcademicYears?: number[],
+): { value: number; label: string }[] {
+  if (!availableAcademicYears || availableAcademicYears.length === 0) {
+    return ACADEMIC_YEAR_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
+  }
+  const allowed = new Set(availableAcademicYears);
+  const fromKnown = ACADEMIC_YEAR_OPTIONS.filter((option) => allowed.has(option.value)).map(
+    (option) => ({ value: option.value, label: option.label }),
+  );
+  if (fromKnown.length > 0) return fromKnown;
+  return [...availableAcademicYears]
+    .sort((a, b) => a - b)
+    .map((year) => ({ value: year, label: `Aug ${year} – Jun ${year + 1}` }));
+}
+
+/** Snap filters onto the nearest option that has data. */
+export function clampFiltersToAvailable(
+  filters: {
+    period: "week" | "month" | "year";
+    month: number;
+    year: number;
+    weekStart: string;
+  },
+  available?: {
+    months: AvailableMonthOption[];
+    weeks: string[];
+    academicYears: number[];
+    periods: Array<"week" | "month" | "year">;
+  } | null,
+): {
+  period: "week" | "month" | "year";
+  month: number;
+  year: number;
+  weekStart: string;
+} {
+  if (!available) return filters;
+
+  let period = filters.period;
+  if (available.periods.length > 0 && !available.periods.includes(period)) {
+    period = available.periods.includes("year")
+      ? "year"
+      : available.periods.includes("month")
+        ? "month"
+        : available.periods[0];
+  }
+
+  if (period === "year") {
+    const academicYears = available.academicYears;
+    let year = filters.year === 2026 ? 2025 : filters.year;
+    if (academicYears.length > 0 && !academicYears.includes(year)) {
+      year = academicYears.includes(2025) ? 2025 : academicYears[academicYears.length - 1];
+    }
+    return { ...filters, period, year };
+  }
+
+  const years = yearOptionsWithData(
+    period === "week" ? monthsOverlappingWeeks(available.weeks) : available.months,
+  );
+  let year = filters.year;
+  if (years.length > 0 && !years.includes(year)) {
+    year = years.includes(2026) ? 2026 : years[years.length - 1];
+  }
+
+  const monthSource =
+    period === "week" ? monthsOverlappingWeeks(available.weeks) : available.months;
+  const months = monthOptionsWithData(year, monthSource);
+  let month = filters.month;
+  if (months.length > 0 && !months.some((option) => option.value === month)) {
+    month = months.some((option) => option.value === 6) ? 6 : months[months.length - 1].value;
+  }
+
+  if (period === "week") {
+    const weekStart = resolveWeekStartWithData(month, year, filters.weekStart, available.weeks);
+    return { period, month, year, weekStart };
+  }
+
+  return { ...filters, period, month, year };
+}

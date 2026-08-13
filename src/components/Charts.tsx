@@ -15,6 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import { useDashboardData } from "../context/DashboardDataContext";
+import { prettyPostTitle, shortPostLabel } from "../data";
 
 const CHART_COLORS = ["#6EC100", "#FFDE00", "#FF6E02", "#FD8DFD", "#008B48", "#FE0000"];
 
@@ -132,20 +133,32 @@ export function PostsByLocationChart() {
 
 export function ClaimsVsViewsChart() {
   const { data } = useDashboardData();
-  const chartData = data.posts.map((post) => ({
-    id: post.id,
-    views: post.views,
-    claims: post.claims,
-  }));
+  const chartData = [...data.posts]
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 12)
+    .map((post) => {
+      const title = prettyPostTitle(post);
+      return {
+        label: shortPostLabel(title),
+        full: title,
+        views: post.views,
+        claims: post.claims,
+      };
+    });
 
   return (
-    <ChartShell id="chart-claims-vs-views" title="Claims vs views by post" caption="Top sample posts">
+    <ChartShell id="chart-claims-vs-views" title="Claims vs views by post" caption="Top posts in this period">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#18181b22" />
-          <XAxis dataKey="id" tick={{ fontSize: 10 }} />
+          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={48} />
           <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip />
+          <Tooltip
+            labelFormatter={(_label, payload) => {
+              const row = payload?.[0]?.payload as { full?: string } | undefined;
+              return row?.full ?? "";
+            }}
+          />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Bar dataKey="views" name="Views" fill="#EDDBC3" stroke="#18181b" strokeWidth={1} radius={[4, 4, 0, 0]} />
           <Bar dataKey="claims" name="Claims" fill="#6EC100" radius={[4, 4, 0, 0]} />

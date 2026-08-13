@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { ChartExportLibrary } from "../components/ChartExportLibrary";
 import {
@@ -21,13 +21,15 @@ import {
 } from "../api";
 import { DashboardDataProvider, useDashboardData } from "../context/DashboardDataContext";
 import {
-  ACADEMIC_YEAR_OPTIONS,
-  CALENDAR_MONTHS,
-  FILTER_YEARS,
-  TABS,
-  weeksInMonth,
+  academicYearOptionsWithData,
+  monthOptionsWithData,
+  monthsOverlappingWeeks,
   periodLabel,
+  prettyPostTitle,
+  weeksWithData,
+  yearOptionsWithData,
   type TabId,
+  TABS,
 } from "../data";
 import {
   downloadAllDataXlsx,
@@ -214,6 +216,7 @@ function DashboardContent() {
     data,
     period,
     filters,
+    availablePeriods,
     setPeriod,
     setMonth,
     setYear,
@@ -231,13 +234,67 @@ function DashboardContent() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [postQuery, setPostQuery] = useState("");
+  const [postLocation, setPostLocation] = useState("all");
+  const [postStaff, setPostStaff] = useState("all");
+  const [postSort, setPostSort] = useState<"newest" | "claims" | "rate">("newest");
   const label = periodLabel(period, filters.month, filters.year, filters.weekStart);
-  const weekOptions = period === "week" ? weeksInMonth(filters.month, filters.year) : [];
+
+  const periodOptions: { value: DashboardPeriod; label: string }[] = [
+    { value: "week", label: "Week" },
+    { value: "month", label: "Calendar month" },
+    { value: "year", label: "Academic year" },
+  ].filter((option) => !availablePeriods || availablePeriods.periods.includes(option.value));
+
+  const monthsForSelectors =
+    period === "week" && availablePeriods
+      ? monthsOverlappingWeeks(availablePeriods.weeks)
+      : availablePeriods?.months;
+
+  const yearOptions = yearOptionsWithData(monthsForSelectors);
+  const monthOptions = monthOptionsWithData(filters.year, monthsForSelectors);
+  const weekOptions =
+    period === "week" ? weeksWithData(filters.month, filters.year, availablePeriods?.weeks) : [];
+  const academicOptions = academicYearOptionsWithData(availablePeriods?.academicYears);
 
   const avgClaimsPerPost =
     posts.length > 0 ? posts.reduce((sum, post) => sum + post.claims, 0) / posts.length : 0;
   const avgViewsPerPost =
     posts.length > 0 ? posts.reduce((sum, post) => sum + post.views, 0) / posts.length : 0;
+
+  const postLocations = useMemo(
+    () => [...new Set(posts.map((post) => post.location).filter((name) => name && name !== "—"))].sort(),
+    [posts],
+  );
+  const postStaffNames = useMemo(
+    () => [...new Set(posts.map((post) => post.staff).filter(Boolean))].sort(),
+    [posts],
+  );
+  const filteredPosts = useMemo(() => {
+    const needle = postQuery.trim().toLowerCase();
+    const matched = posts.filter((post) => {
+      const title = prettyPostTitle(post);
+      if (postLocation !== "all" && post.location !== postLocation) return false;
+      if (postStaff !== "all" && post.staff !== postStaff) return false;
+      if (!needle) return true;
+      const haystack = [
+        title,
+        post.description,
+        post.location,
+        post.staff,
+        post.allergens,
+        post.posted,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+    return [...matched].sort((a, b) => {
+      if (postSort === "claims") return b.claims - a.claims;
+      if (postSort === "rate") return b.claimRate - a.claimRate;
+      return (b.postedAt || "").localeCompare(a.postedAt || "");
+    });
+  }, [posts, postQuery, postLocation, postStaff, postSort]);
 
   const topTimeSlots = [...data.hours]
     .map((hour, index) => ({
@@ -309,11 +366,13 @@ function DashboardContent() {
               value={period}
               onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}
               aria-label="Date range"
-              disabled={refreshing}
+              disabled={refreshing || periodOptions.length === 0}
             >
-              <option value="week">Week</option>
-              <option value="month">Calendar month</option>
-              <option value="year">Academic year</option>
+              {periodOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
             {period === "week" ? (
               <>
@@ -322,9 +381,9 @@ function DashboardContent() {
                   value={filters.month}
                   onChange={(event) => setMonth(Number(event.target.value))}
                   aria-label="Month"
-                  disabled={refreshing}
+                  disabled={refreshing || monthOptions.length === 0}
                 >
-                  {CALENDAR_MONTHS.map((option) => (
+                  {monthOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -335,9 +394,9 @@ function DashboardContent() {
                   value={filters.year}
                   onChange={(event) => setYear(Number(event.target.value))}
                   aria-label="Year"
-                  disabled={refreshing}
+                  disabled={refreshing || yearOptions.length === 0}
                 >
-                  {FILTER_YEARS.map((year) => (
+                  {yearOptions.map((year) => (
                     <option key={year} value={year}>
                       {year}
                     </option>
@@ -365,9 +424,9 @@ function DashboardContent() {
                   value={filters.month}
                   onChange={(event) => setMonth(Number(event.target.value))}
                   aria-label="Month"
-                  disabled={refreshing}
+                  disabled={refreshing || monthOptions.length === 0}
                 >
-                  {CALENDAR_MONTHS.map((option) => (
+                  {monthOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -378,9 +437,9 @@ function DashboardContent() {
                   value={filters.year}
                   onChange={(event) => setYear(Number(event.target.value))}
                   aria-label="Year"
-                  disabled={refreshing}
+                  disabled={refreshing || yearOptions.length === 0}
                 >
-                  {FILTER_YEARS.map((year) => (
+                  {yearOptions.map((year) => (
                     <option key={year} value={year}>
                       {year}
                     </option>
@@ -394,9 +453,9 @@ function DashboardContent() {
                 value={filters.year === 2026 ? 2025 : filters.year}
                 onChange={(event) => setYear(Number(event.target.value))}
                 aria-label="Academic year"
-                disabled={refreshing}
+                disabled={refreshing || academicOptions.length === 0}
               >
-                {ACADEMIC_YEAR_OPTIONS.map((option) => (
+                {academicOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -498,28 +557,89 @@ function DashboardContent() {
           </div>
           <ClaimsVsViewsChart />
           <h2 className="font-display text-xl">Individual posts</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="search"
+              className="period-select min-w-[12rem] flex-1"
+              placeholder="Search title, location, staff…"
+              value={postQuery}
+              onChange={(event) => setPostQuery(event.target.value)}
+              aria-label="Search posts"
+            />
+            <select
+              className="period-select"
+              value={postLocation}
+              onChange={(event) => setPostLocation(event.target.value)}
+              aria-label="Filter by location"
+            >
+              <option value="all">All locations</option>
+              {postLocations.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="period-select"
+              value={postStaff}
+              onChange={(event) => setPostStaff(event.target.value)}
+              aria-label="Filter by staff"
+            >
+              <option value="all">All staff</option>
+              {postStaffNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="period-select"
+              value={postSort}
+              onChange={(event) => setPostSort(event.target.value as "newest" | "claims" | "rate")}
+              aria-label="Sort posts"
+            >
+              <option value="newest">Newest first</option>
+              <option value="claims">Most claims</option>
+              <option value="rate">Highest claim rate</option>
+            </select>
+          </div>
+          <p className="font-sans text-xs text-black/60">
+            Showing {filteredPosts.length} of {posts.length} posts
+          </p>
           <div className="space-y-3">
-            {posts.map((post) => (
-              <details key={post.id} className="card p-4">
-                <summary className="cursor-pointer font-sans text-sm font-semibold">
-                  {post.id} — {post.title}
-                  <span className="ml-2 text-black/60">{post.claimRate}% claimed</span>
-                </summary>
-                <div className="mt-3 space-y-2 font-sans text-sm text-black/80">
-                  <p>
-                    Posted by {post.staff} · {post.location} · {post.posted}
-                  </p>
-                  <p>{post.description}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="pill bg-scOrange/20 text-xs">Allergens: {post.allergens}</span>
-                    <span className="pill bg-white text-xs">
-                      {post.claims} claims / {post.views} views
-                    </span>
-                    <span className="pill bg-white text-xs">First claim: {post.firstClaimMin} min</span>
-                  </div>
-                </div>
-              </details>
-            ))}
+            {filteredPosts.length === 0 ? (
+              <div className="card p-4 font-sans text-sm text-black/70">
+                No posts match this search. Try a different keyword or clear the filters.
+              </div>
+            ) : (
+              filteredPosts.map((post) => {
+                const title = prettyPostTitle(post);
+                return (
+                  <details key={post.id} className="card p-4">
+                    <summary className="cursor-pointer font-sans text-sm font-semibold">
+                      {title}
+                      <span className="ml-2 text-black/60">{post.claimRate}% claimed</span>
+                    </summary>
+                    <div className="mt-3 space-y-2 font-sans text-sm text-black/80">
+                      <p>
+                        Posted by {post.staff} · {post.location} · {post.posted}
+                      </p>
+                      {post.description ? <p>{post.description}</p> : null}
+                      <div className="flex flex-wrap gap-2">
+                        <span className="pill bg-scOrange/20 text-xs">Allergens: {post.allergens}</span>
+                        <span className="pill bg-white text-xs">
+                          {post.claims} claims / {post.views} views
+                        </span>
+                        <span className="pill bg-white text-xs">First claim: {post.firstClaimMin} min</span>
+                        <span className="pill bg-white text-xs">
+                          {post.lbsDiverted} lbs diverted
+                        </span>
+                      </div>
+                    </div>
+                  </details>
+                );
+              })
+            )}
           </div>
         </TabPanel>
 

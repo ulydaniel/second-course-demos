@@ -75,6 +75,28 @@ class OverviewResponse(BaseModel):
     locations: list[LocationMetric]
 
 
+class AvailableMonth(BaseModel):
+    """Calendar month that has at least one post or claim."""
+
+    year: int
+    month: int
+
+
+class AvailablePeriodsResponse(BaseModel):
+    """Date-filter options that contain dashboard activity.
+
+    Used by the UI to hide empty week / month / academic-year choices so users
+    cannot navigate to blank dashboard ranges.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+    months: list[AvailableMonth]
+    weeks: list[str]
+    academic_years: list[int] = Field(alias="academicYears")
+    periods: list[Literal["week", "month", "year"]]
+
+
 class DemandResponse(BaseModel):
     locations: list[str]
     times: list[str]

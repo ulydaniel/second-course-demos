@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  fetchAvailablePeriods,
   fetchDashboardData,
   getApiErrorCode,
   getApiErrorKind,
   getApiErrorMessage,
   type ApiErrorKind,
+  type AvailablePeriods,
   type DashboardData,
   type DashboardFilters,
   type DashboardPeriod,
@@ -29,9 +31,10 @@ import {
   UNIVERSITY,
   WASTE_LBS,
   WASTE_MONTHS,
+  clampFiltersToAvailable,
   parseWeekStart,
   periodLabel,
-  resolveWeekStart,
+  resolveWeekStartWithData,
 } from "../data";
 
 const fallbackData: DashboardData = {
@@ -66,6 +69,7 @@ type DashboardDataState = {
   data: DashboardData;
   filters: DashboardFilters;
   period: DashboardPeriod;
+  availablePeriods: AvailablePeriods | null;
   setPeriod: (period: DashboardPeriod) => void;
   setMonth: (month: number) => void;
   setYear: (year: number) => void;
@@ -83,6 +87,7 @@ const DashboardDataContext = createContext<DashboardDataState>({
   data: fallbackData,
   filters: DEFAULT_FILTERS,
   period: DEFAULT_FILTERS.period,
+  availablePeriods: null,
   setPeriod: () => undefined,
   setMonth: () => undefined,
   setYear: () => undefined,
@@ -98,8 +103,10 @@ const DashboardDataContext = createContext<DashboardDataState>({
 
 export function DashboardDataProvider({ children }: { children: ReactNode }) {
   const [filters, setFilters] = useState<DashboardFilters>(DEFAULT_FILTERS);
+  const [availablePeriods, setAvailablePeriods] = useState<AvailablePeriods | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const hasLoadedRef = useRef(false);
+  const availableRef = useRef<AvailablePeriods | null>(null);
   const [state, setState] = useState({
     data: fallbackData,
     loading: true,
@@ -112,23 +119,38 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
 
   const setPeriod = useCallback((period: DashboardPeriod) => {
     setFilters((current) => {
+      const available = availableRef.current;
       if (period === "week") {
         const monday = parseWeekStart(current.weekStart || DEFAULT_WEEK_START);
         const month = monday.getMonth() + 1;
         const year = monday.getFullYear();
-        return {
-          ...current,
-          period,
-          month,
-          year,
-          weekStart: resolveWeekStart(month, year, current.weekStart || DEFAULT_WEEK_START),
-        };
+        return clampFiltersToAvailable(
+          {
+            ...current,
+            period,
+            month,
+            year,
+            weekStart: resolveWeekStartWithData(
+              month,
+              year,
+              current.weekStart || DEFAULT_WEEK_START,
+              available?.weeks,
+            ),
+          },
+          available,
+        );
       }
       if (period === "month") {
-        return { ...current, period, month: current.month || 6, year: current.year || 2026 };
+        return clampFiltersToAvailable(
+          { ...current, period, month: current.month || 6, year: current.year || 2026 },
+          available,
+        );
       }
       if (period === "year") {
-        return { ...current, period, year: current.year === 2026 ? 2025 : current.year || 2025 };
+        return clampFiltersToAvailable(
+          { ...current, period, year: current.year === 2026 ? 2025 : current.year || 2025 },
+          available,
+        );
       }
       return { ...current, period };
     });
@@ -136,27 +158,35 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
 
   const setMonth = useCallback((month: number) => {
     setFilters((current) => {
+      const available = availableRef.current;
       if (current.period === "week") {
-        return {
-          ...current,
-          month,
-          weekStart: resolveWeekStart(month, current.year, current.weekStart),
-        };
+        return clampFiltersToAvailable(
+          {
+            ...current,
+            month,
+            weekStart: resolveWeekStartWithData(month, current.year, current.weekStart, available?.weeks),
+          },
+          available,
+        );
       }
-      return { ...current, period: "month", month };
+      return clampFiltersToAvailable({ ...current, period: "month", month }, available);
     });
   }, []);
 
   const setYear = useCallback((year: number) => {
     setFilters((current) => {
+      const available = availableRef.current;
       if (current.period === "week") {
-        return {
-          ...current,
-          year,
-          weekStart: resolveWeekStart(current.month, year, current.weekStart),
-        };
+        return clampFiltersToAvailable(
+          {
+            ...current,
+            year,
+            weekStart: resolveWeekStartWithData(current.month, year, current.weekStart, available?.weeks),
+          },
+          available,
+        );
       }
-      return { ...current, year };
+      return clampFiltersToAvailable({ ...current, year }, available);
     });
   }, []);
 
@@ -167,6 +197,27 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
   const retry = useCallback(() => {
     setRetryCount((count) => count + 1);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchAvailablePeriods()
+      .then((periods) => {
+        if (cancelled) return;
+        availableRef.current = periods;
+        setAvailablePeriods(periods);
+        setFilters((current) => clampFiltersToAvailable(current, periods));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        availableRef.current = null;
+        setAvailablePeriods(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [retryCount]);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,6 +276,7 @@ export function DashboardDataProvider({ children }: { children: ReactNode }) {
         ...state,
         filters,
         period: filters.period,
+        availablePeriods,
         setPeriod,
         setMonth,
         setYear,
