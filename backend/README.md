@@ -62,6 +62,38 @@ See `resources/Second Course Data Metrics - Sheet1.csv` for how collected app da
 (student users, food posters) maps to dashboard sections. Stub table plans live in
 `app/models/__init__.py`.
 
+## Firestore metrics
+
+Overview / Posts / Impact read live analytics from Firestore when a client can be
+built, and fall back to `mock_data.py` otherwise (`METRICS_SOURCE=auto|firestore|mock`).
+
+- `services/firestore_client.py` — emulator (anonymous creds via `FIRESTORE_EMULATOR_HOST`)
+  or a service account (`FIREBASE_CREDENTIALS_PATH`). Normalises the retired
+  `southwestern` → `swccd` campus id.
+- `services/metrics_cache.py` — caches the mirrored collections (`posts`, `claims`,
+  `post_views`, `users`, `campuses`) and attaches `on_snapshot` listeners so new
+  posts / weight / savings show up without a redeploy (TTL poll as fallback).
+- `services/firestore_metrics.py` — computes KPIs per DATA_CONTRACT §5/§6: claim rate
+  over unique viewers, lbs diverted, student meal value, hauling (`$/lb`) and CO₂e
+  from per-campus factors. Read-only — the analytics collections are never written.
+
+Demographics are exposed only as privacy-safe aggregates at
+`GET /api/impact/demographics` (campus-scoped, small cells below `minCellSize`
+suppressed, no student PII).
+
+Verify against the handoff emulator:
+
+```powershell
+# In the dashboard-handoff folder: npm run emulator ; npm run seed
+$env:METRICS_SOURCE = "firestore"
+$env:FIRESTORE_EMULATOR_HOST = "localhost:8080"
+$env:FIRESTORE_PROJECT_ID = "demo-second-course"
+uvicorn app.main:app --reload --port 8000
+```
+
+SDSU year totals should read ~260 posts / 2,389 claims / ~1,529 lbs / ~$14,962 meal
+value / ~$138 hauling (not the mock 847 / 3,420 / $4,280).
+
 ## Next steps
 
 1. Replace `mock_data.py` reads with SQL queries via `models/` + `db/session.py`

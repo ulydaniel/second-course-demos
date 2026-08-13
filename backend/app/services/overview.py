@@ -1,5 +1,5 @@
 from app.schemas.dashboard import OverviewResponse, SummaryKpis
-from app.services import mock_data
+from app.services import metrics, mock_data
 
 
 def get_overview(
@@ -10,7 +10,7 @@ def get_overview(
     year: int | None = None,
     week_start: str | None = None,
 ) -> OverviewResponse:
-    snap = mock_data.get_snapshot(
+    snap = metrics.get_snapshot(
         university_id, period, month=month, year=year, week_start=week_start
     )
     return OverviewResponse(
