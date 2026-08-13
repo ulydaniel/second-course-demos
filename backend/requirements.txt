@@ -5,5 +5,9 @@ pydantic-settings>=2.6.0
 python-dotenv>=1.0.1
 cryptography>=43.0.0
 slowapi>=0.1.9
-# Optional — only needed when AUTH_PROVIDER=firebase and credentials are configured:
+# Firestore analytics ingest (posts / claims / demographics) and, when
+# AUTH_PROVIDER=firebase, the Admin SDK. google-cloud-firestore is the read
+# client used by services/firestore_client.py; firebase-admin is optional and
+# only needed for the Firebase Auth path.
+google-cloud-firestore>=2.16.0
 # firebase-admin>=6.5.0

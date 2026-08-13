@@ -138,6 +138,7 @@ export const SUMMARY = {
   lbsDiverted: 3420,
   tco2e: 1.2,
   haulingSavings: 4280,
+  mealValue: 42310,
 };
 
 export const CHART_EXPORT_IDS = [

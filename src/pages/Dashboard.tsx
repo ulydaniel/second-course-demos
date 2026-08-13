@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { ChartExportLibrary } from "../components/ChartExportLibrary";
 import {
@@ -13,7 +13,12 @@ import {
 } from "../components/Charts";
 import { DemandHeatmap } from "../components/DemandHeatmap";
 import { ResourcesScreen } from "../components/app/ResourcesScreen";
-import type { DashboardPeriod } from "../api";
+import {
+  fetchDemographics,
+  getApiErrorMessage,
+  type DashboardPeriod,
+  type DemographicsResponse,
+} from "../api";
 import { DashboardDataProvider, useDashboardData } from "../context/DashboardDataContext";
 import {
   ACADEMIC_YEAR_OPTIONS,
@@ -45,6 +50,147 @@ function utilizationClass(utilization: "high" | "medium" | "low") {
   if (utilization === "high") return "bg-scGreen/30";
   if (utilization === "medium") return "bg-scYellow/50";
   return "bg-scOrange/30";
+}
+
+// Friendlier titles + preferred order for known demographic keys. Any key not
+// listed here still renders (the backend surfaces new signup questions
+// automatically); unknown keys fall back to a humanized version of the key.
+const DEMOGRAPHIC_LABELS: Record<string, string> = {
+  role: "Role",
+  year: "Year in school",
+  major: "Major",
+  gradYear: "Graduation year",
+  age: "Age",
+  genderIdentity: "Gender identity",
+  raceEthnicity: "Race / ethnicity",
+  firstGen: "First-generation student",
+  international: "International student",
+  housing: "Housing",
+  mealPlan: "Has meal plan",
+  foodWorry: "Food insecurity worry",
+  calfresh: "CalFresh status",
+  dietary: "Dietary needs",
+  commute: "Commute",
+};
+const DEMOGRAPHIC_ORDER = ["year", "major", "housing", "foodWorry", "firstGen", "calfresh"];
+
+function humanizeKey(key: string): string {
+  if (DEMOGRAPHIC_LABELS[key]) return DEMOGRAPHIC_LABELS[key];
+  return key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
+}
+
+function orderedFieldKeys(fields: Record<string, unknown>): string[] {
+  const keys = Object.keys(fields);
+  const known = DEMOGRAPHIC_ORDER.filter((k) => keys.includes(k));
+  const rest = keys.filter((k) => !DEMOGRAPHIC_ORDER.includes(k)).sort();
+  return [...known, ...rest];
+}
+
+function DemographicsPanel() {
+  const [data, setData] = useState<DemographicsResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchDemographics()
+      .then((result) => {
+        if (!cancelled) {
+          setData(result);
+          setError(null);
+        }
+      })
+      .catch((fetchError) => {
+        if (!cancelled) setError(getApiErrorMessage(fetchError));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="callout-neutral">
+        <strong className="block mb-1">Student demographics</strong>
+        Loading cohort-level aggregates…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="callout-warning">
+        <strong className="block mb-1">Student demographics unavailable</strong>
+        {error}
+      </div>
+    );
+  }
+
+  const fieldKeys = data ? orderedFieldKeys(data.fields) : [];
+  const hasData = data && data.respondentCount > 0 && fieldKeys.length > 0;
+
+  return (
+    <div className="card p-4 space-y-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-display text-lg">Student demographics (cohort-level)</h2>
+        {data ? (
+          <span className="text-xs text-black/60">
+            {data.respondentCount.toLocaleString()} of {data.userCount.toLocaleString()} students
+            responded
+          </span>
+        ) : null}
+      </div>
+      <p className="text-sm text-black/70 font-sans">
+        Aggregated from the student app and scoped to your campus. Individual responses are never
+        shown; groups smaller than {data?.minCellSize ?? 5} are suppressed to protect privacy.
+      </p>
+
+      {hasData ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          {fieldKeys.map((key) => {
+            const buckets = data!.fields[key];
+            const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0) || 1;
+            return (
+              <div key={key} className="rounded-xl border-2 border-black/10 p-3">
+                <h3 className="font-display text-sm mb-2">{humanizeKey(key)}</h3>
+                <div className="space-y-1.5">
+                  {buckets.slice(0, 8).map((bucket) => {
+                    const pct = Math.round((bucket.count / total) * 100);
+                    return (
+                      <div key={bucket.label}>
+                        <div className="flex justify-between text-xs text-black/70">
+                          <span className="truncate pr-2">{bucket.label}</span>
+                          <span className="shrink-0 tabular-nums">
+                            {bucket.count} · {pct}%
+                          </span>
+                        </div>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-black/5">
+                          <div
+                            className="h-full rounded-full bg-brandGreen"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-black/60 font-sans">
+          No demographic responses are available for this campus yet
+          {data?.suppressed ? ", or all groups fell below the privacy threshold" : ""}. Breakdowns
+          appear here once enough students complete the optional signup survey.
+        </p>
+      )}
+    </div>
+  );
 }
 
 function TabPanel({ active, id, children }: { active: boolean; id: TabId; children: React.ReactNode }) {
@@ -489,20 +635,17 @@ function DashboardContent() {
         </TabPanel>
 
         <TabPanel active={activeTab === "impact"} id="impact">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard value={summary.totalPosts.toLocaleString()} label="Food posts (period)" />
             <StatCard value={`${summary.lbsDiverted.toLocaleString()} lbs`} label="Food diverted (est.)" accent="green" />
-            <StatCard value={`${summary.tco2e} tCO₂e`} label="Climate impact (est.)" accent="green" />
+            <StatCard value={`$${summary.mealValue.toLocaleString()}`} label="Student meal value (est.)" accent="green" />
             <StatCard value={`$${summary.haulingSavings.toLocaleString()}`} label="Waste hauling savings (est.)" />
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <WasteDivertedChart />
             <ClimateImpactChart />
           </div>
-          <div className="callout-neutral">
-            <strong className="block mb-1">Student demographics (future)</strong>
-            Demographic breakdowns (year, major, housing status) are planned for a future release. Data will respect
-            student privacy and aggregate only at the cohort level.
-          </div>
+          <DemographicsPanel />
           <div className="card p-4">
             <h2 className="font-display text-lg mb-3">Smart aggregation — sustainability snapshot</h2>
             <div className="grid gap-4 md:grid-cols-2 font-sans text-sm text-black/80">

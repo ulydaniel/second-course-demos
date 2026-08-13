@@ -56,6 +56,9 @@ class SummaryKpis(BaseModel):
     lbs_diverted: int = Field(alias="lbsDiverted")
     tco2e: float
     hauling_savings: int = Field(alias="haulingSavings")
+    # Student meal value (sum of claims.estimatedValue). Defaults to 0 so the
+    # mock snapshots — which predate this field — still validate.
+    meal_value: int = Field(alias="mealValue", default=0)
 
 
 class OverviewResponse(BaseModel):
@@ -86,3 +89,26 @@ class ImpactResponse(BaseModel):
     climate_months: list[str] = Field(alias="climateMonths")
     climate_tco2: list[float] = Field(alias="climateTco2")
     summary: SummaryKpis
+
+
+class DemographicBucket(BaseModel):
+    label: str
+    count: int
+
+
+class DemographicsResponse(BaseModel):
+    """Privacy-safe demographic aggregates.
+
+    Only bucket counts leave the server — never a student's uid, email, or
+    individual answers. Buckets below the campus `minCellSize` are dropped so no
+    cell identifies a small group (k-anonymity). Any demographics key present in
+    Firestore is surfaced automatically under `fields`.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+    respondent_count: int = Field(alias="respondentCount")
+    user_count: int = Field(alias="userCount")
+    min_cell_size: int = Field(alias="minCellSize")
+    suppressed: bool
+    fields: dict[str, list[DemographicBucket]]

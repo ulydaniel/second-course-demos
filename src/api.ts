@@ -9,6 +9,21 @@ export type SummaryKpis = {
   lbsDiverted: number;
   tco2e: number;
   haulingSavings: number;
+  /** Student meal value — sum of claims.estimatedValue (USD). */
+  mealValue: number;
+};
+
+export type DemographicBucket = {
+  label: string;
+  count: number;
+};
+
+export type DemographicsResponse = {
+  respondentCount: number;
+  userCount: number;
+  minCellSize: number;
+  suppressed: boolean;
+  fields: Record<string, DemographicBucket[]>;
 };
 
 export type LocationMetric = {
@@ -290,6 +305,13 @@ export async function fetchDashboardData(filters: DashboardFilters): Promise<Das
     climateMonths: impact.climateMonths,
     climateTco2: impact.climateTco2,
   };
+}
+
+export async function fetchDemographics(
+  universityId?: string,
+): Promise<DemographicsResponse> {
+  const qs = universityId ? `?universityId=${encodeURIComponent(universityId)}` : "";
+  return fetchJson<DemographicsResponse>(`/api/impact/demographics${qs}`);
 }
 
 export function getApiErrorMessage(error: unknown): string {

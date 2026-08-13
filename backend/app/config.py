@@ -21,6 +21,21 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = 28800
     auth_provider: str = "local"
     firebase_credentials_path: str | None = None
+
+    # Metrics data source. "auto" uses Firestore when a client can be built
+    # (emulator host or credentials present) and otherwise falls back to the
+    # bundled mock_data. "firestore" forces Firestore (still falls back to mock
+    # on a connection error so the demo boots). "mock" never touches Firestore.
+    metrics_source: str = "auto"
+    # Firestore project id. Use "demo-second-course" for the local emulator.
+    firestore_project_id: str | None = None
+    # When set (e.g. "localhost:8080"), the Admin/Client SDK talks to the local
+    # emulator with anonymous credentials instead of a real project.
+    firestore_emulator_host: str | None = None
+    # Seconds a cached Firestore snapshot is served before a background refresh.
+    # on_snapshot listeners invalidate sooner when documents actually change.
+    firestore_cache_ttl_seconds: int = 30
+
     dev_admin_emails: str = "dev@secondcourse.co"
     # Required from .env / environment — no default in source
     dev_admin_password: str
