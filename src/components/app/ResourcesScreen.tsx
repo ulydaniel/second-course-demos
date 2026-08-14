@@ -25,9 +25,6 @@ import { CALENDAR_MONTHS, FILTER_YEARS } from "../../data";
 /** Demo events are seeded for this month only (day-of-month keys). */
 const DEMO_EVENT_MONTH = 6;
 const DEMO_EVENT_YEAR = 2026;
-const DEFAULT_VIEW_MONTH = DEMO_EVENT_MONTH;
-const DEFAULT_VIEW_YEAR = DEMO_EVENT_YEAR;
-const DEFAULT_SELECTED_DAY = 22;
 const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 const MIN_VIEW_YEAR = FILTER_YEARS[0];
 const MAX_VIEW_YEAR = FILTER_YEARS[FILTER_YEARS.length - 1];
@@ -566,8 +563,13 @@ function BulletinEditor({
   );
 }
 
-export function ResourcesScreen() {
-  const { canEditResources } = useAuth();
+function eventMatchesView(event: SpecialEvent, year: number, month: number) {
+  return (event.year ?? year) === year && (event.month ?? month) === month;
+}
+
+export function ResourcesScreen({ universityId }: { universityId?: string }) {
+  const { user, canEditResources } = useAuth();
+  const campusId = universityId ?? user?.university?.id ?? "sdsu";
 
   const [pantries, setPantries] = useState<Pantry[]>(() => PANTRIES.map((p) => ({ ...p, hours: [...p.hours] })));
   const [events, setEvents] = useState<Record<number, SpecialEvent[]>>(() =>
@@ -582,39 +584,59 @@ export function ResourcesScreen() {
     BULLETIN.map((item) => ({ ...item, content: [...item.content] })),
   );
 
-  const [viewMonth, setViewMonth] = useState(DEFAULT_VIEW_MONTH); // 1–12
-  const [viewYear, setViewYear] = useState(DEFAULT_VIEW_YEAR);
-  const [selected, setSelected] = useState(DEFAULT_SELECTED_DAY);
+  const [viewMonth, setViewMonth] = useState(() => new Date().getMonth() + 1);
+  const [viewYear, setViewYear] = useState(() => {
+    const year = new Date().getFullYear();
+    if (year < MIN_VIEW_YEAR) return MIN_VIEW_YEAR;
+    if (year > MAX_VIEW_YEAR) return MAX_VIEW_YEAR;
+    return year;
+  });
+  const [selected, setSelected] = useState(() => new Date().getDate());
   const [openItem, setOpenItem] = useState<BulletinItem | null>(null);
   const [editingPantryIndex, setEditingPantryIndex] = useState<number | "new" | null>(null);
   const [eventEditor, setEventEditor] = useState<"new" | number | null>(null);
   const [editingBulletinIndex, setEditingBulletinIndex] = useState<number | "new" | null>(null);
   const [fromApi, setFromApi] = useState(false);
 
-  // Load the shared backend snapshot on mount so the dashboard and student app
-  // stay in sync. On failure keep the appData.ts seed and flag as offline.
+  // Live-pull the campus snapshot from the API (Firestore-backed) so dashboard
+  // edits and the student app stay on the same documents.
   useEffect(() => {
     let cancelled = false;
-    fetchResources()
-      .then((snap) => {
-        if (cancelled) return;
-        setPantries(snap.pantries);
-        setEvents(snap.events);
-        setBulletin(snap.bulletin);
-        setFromApi(true);
-      })
-      .catch(() => {
-        if (!cancelled) setFromApi(false);
-      });
+
+    function applySnapshot(snap: {
+      pantries: Pantry[];
+      events: Record<number, SpecialEvent[]>;
+      bulletin: BulletinItem[];
+    }) {
+      setPantries(snap.pantries);
+      setEvents(snap.events);
+      setBulletin(snap.bulletin);
+      setFromApi(true);
+    }
+
+    function load() {
+      fetchResources(campusId)
+        .then((snap) => {
+          if (!cancelled) applySnapshot(snap);
+        })
+        .catch(() => {
+          if (!cancelled) setFromApi(false);
+        });
+    }
+
+    load();
+    const timer = window.setInterval(load, 20000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, []);
+  }, [campusId]);
 
   const monthIndex = viewMonth - 1;
   const firstWeekday = new Date(viewYear, monthIndex, 1).getDay();
   const monthLength = daysInMonth(viewYear, viewMonth);
   const showingDemoEvents = viewMonth === DEMO_EVENT_MONTH && viewYear === DEMO_EVENT_YEAR;
+  const showingEvents = fromApi || showingDemoEvents;
   const canGoPrev = viewYear > MIN_VIEW_YEAR || viewMonth > 1;
   const canGoNext = viewYear < MAX_VIEW_YEAR || viewMonth < 12;
 
@@ -639,7 +661,11 @@ export function ResourcesScreen() {
 
   const selectedWeekday = new Date(viewYear, monthIndex, selected).getDay();
   const selectedPantries = pantriesOpenOn(pantries, selectedWeekday);
-  const selectedSpecial = showingDemoEvents ? (events[selected] ?? []) : [];
+  const selectedSpecial = showingEvents
+    ? (events[selected] ?? []).filter((event) =>
+        fromApi ? eventMatchesView(event, viewYear, viewMonth) : true,
+      )
+    : [];
   const selectedDayLabel = new Date(viewYear, monthIndex, selected).toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -764,7 +790,13 @@ export function ResourcesScreen() {
                 if (day === null) return <div key={`e${i}`} />;
                 const weekday = new Date(viewYear, monthIndex, day).getDay();
                 const hasPantry = pantriesOpenOn(pantries, weekday).length > 0;
-                const hasEvent = showingDemoEvents && Boolean(events[day]?.length);
+                const hasEvent =
+                  showingEvents &&
+                  Boolean(
+                    (events[day] ?? []).some((event) =>
+                      fromApi ? eventMatchesView(event, viewYear, viewMonth) : true,
+                    ),
+                  );
                 const isSelected = day === selected;
                 return (
                   <button
@@ -799,7 +831,7 @@ export function ResourcesScreen() {
           <div className="card p-3">
             <div className="mb-2 flex items-start justify-between gap-2">
               <h4 className="font-display text-lg">{selectedDayLabel}</h4>
-              {canEditResources && showingDemoEvents ? (
+              {canEditResources && showingEvents ? (
                 <EditChip label="+" onClick={() => setEventEditor("new")} />
               ) : null}
             </div>
@@ -913,12 +945,12 @@ export function ResourcesScreen() {
             if (fromApi) {
               try {
                 if (index === "new") {
-                  const created = await createPantry(body);
+                  const created = await createPantry(body, campusId);
                   setPantries((prev) => [...prev, created]);
                 } else {
                   const target = pantries[index];
                   if (target?.id) {
-                    const updated = await updatePantry(target.id, body);
+                    const updated = await updatePantry(target.id, body, campusId);
                     setPantries((prev) => prev.map((item, i) => (i === index ? updated : item)));
                   }
                 }
@@ -940,7 +972,7 @@ export function ResourcesScreen() {
                   const target = pantries[index];
                   if (fromApi && target?.id) {
                     try {
-                      await deletePantryApi(target.id);
+                      await deletePantryApi(target.id, campusId);
                     } catch {
                       // Ignore and still remove locally.
                     }
@@ -959,18 +991,20 @@ export function ResourcesScreen() {
           onSave={async (event) => {
             const slot = eventEditor;
             const day = selected;
+            const payload = { ...event, day, month: viewMonth, year: viewYear };
             if (fromApi) {
               try {
                 if (slot === "new") {
-                  const created = await createEvent({ ...event, day });
+                  const created = await createEvent(payload, campusId);
                   setEvents((prev) => ({ ...prev, [day]: [...(prev[day] ?? []), created] }));
                 } else {
-                  const target = (events[day] ?? [])[slot];
+                  const target = selectedSpecial[slot];
                   if (target?.id) {
-                    const updated = await updateEvent(target.id, { ...event, day });
+                    const updated = await updateEvent(target.id, payload, campusId);
                     setEvents((prev) => {
                       const existing = [...(prev[day] ?? [])];
-                      existing[slot] = updated;
+                      const idx = existing.findIndex((item) => item.id === target.id);
+                      if (idx >= 0) existing[idx] = updated;
                       return { ...prev, [day]: existing };
                     });
                   }
@@ -996,16 +1030,18 @@ export function ResourcesScreen() {
               : async () => {
                   const slot = eventEditor;
                   const day = selected;
-                  const target = (events[day] ?? [])[slot];
+                  const target = selectedSpecial[slot];
                   if (fromApi && target?.id) {
                     try {
-                      await deleteEventApi(target.id);
+                      await deleteEventApi(target.id, campusId);
                     } catch {
                       // Ignore and still remove locally.
                     }
                   }
                   setEvents((prev) => {
-                    const existing = (prev[day] ?? []).filter((_, i) => i !== slot);
+                    const existing = (prev[day] ?? []).filter((item, i) =>
+                      target?.id ? item.id !== target.id : i !== slot,
+                    );
                     const copy = { ...prev };
                     if (existing.length === 0) delete copy[day];
                     else copy[day] = existing;
@@ -1032,12 +1068,12 @@ export function ResourcesScreen() {
             if (fromApi) {
               try {
                 if (index === "new") {
-                  const created = await createBulletin(body);
+                  const created = await createBulletin(body, campusId);
                   setBulletin((prev) => [...prev, created]);
                 } else {
                   const target = bulletin[index];
                   if (target?.id) {
-                    const updated = await updateBulletin(target.id, body);
+                    const updated = await updateBulletin(target.id, body, campusId);
                     setBulletin((prev) => prev.map((entry, i) => (i === index ? updated : entry)));
                   }
                 }
@@ -1059,7 +1095,7 @@ export function ResourcesScreen() {
                   const target = bulletin[index];
                   if (fromApi && target?.id) {
                     try {
-                      await deleteBulletinApi(target.id);
+                      await deleteBulletinApi(target.id, campusId);
                     } catch {
                       // Ignore and still remove locally.
                     }

@@ -742,10 +742,10 @@ function DashboardContent() {
 
         <TabPanel active={activeTab === "resources"} id="resources">
           <p className="font-sans text-black/80">
-            Campus pantries, events calendar, and the student bulletin — the same Resources
-            experience students see in the app.
+            Campus pantries, events calendar, and the student bulletin — live from the
+            same Firebase collections the Second Course mobile app reads.
           </p>
-          <ResourcesScreen />
+          <ResourcesScreen universityId={user?.university?.id ?? "sdsu"} />
         </TabPanel>
 
         <TabPanel active={activeTab === "impact"} id="impact">

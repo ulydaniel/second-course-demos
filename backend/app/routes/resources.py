@@ -3,7 +3,8 @@
 Reads are public so the student Web/Mobile app can render without auth, but must
 name a campus via `?universityId=` so each tenant only sees its own resources.
 Writes require an approved editor or administrator and are scoped to that
-editor's campus. Backed by the per-university, process-local `resources_store`.
+editor's campus. Backed by Firestore (`resources` / `bulletins` /
+`resourceEvents`) when configured, so the mobile app sees the same documents.
 """
 
 from fastapi import APIRouter, Depends

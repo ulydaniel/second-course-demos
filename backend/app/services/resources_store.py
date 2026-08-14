@@ -1,10 +1,9 @@
-"""In-memory, per-university store for campus Resources (pantries, events,
-bulletin).
+"""Campus Resources store (pantries, events, bulletin).
 
-Data is partitioned by `university_id` so each tenant only sees and edits its
-own campus resources. Reads are public (the student Web/Mobile app renders
-without auth) but must name a university; writes are scoped to the editor's
-campus. Process-local: seeded per campus on construction and reset on restart.
+When Firestore is configured, reads and writes go to the mobile app's
+`resources` / `bulletins` / `resourceEvents` collections so the university
+dashboard and Second Course app stay in sync. Otherwise a process-local
+in-memory seed is used so the demo still boots offline.
 """
 
 from typing import Protocol
@@ -308,4 +307,93 @@ _SEED_BY_UNIVERSITY: dict[str, dict[str, list]] = {
 }
 
 
-resources_store: ResourcesStore = InMemoryResourcesStore()
+class _FirestoreBackedResourcesStore:
+    """Prefer Firestore; fall back to the in-memory seed when it is unavailable."""
+
+    def __init__(self) -> None:
+        self._memory = InMemoryResourcesStore()
+
+    def _live(self):
+        from app.services.firestore_client import firestore_enabled, get_client
+        from app.services.firestore_resources import FirestoreResourcesStore
+
+        if not firestore_enabled() or get_client() is None:
+            return None
+        return FirestoreResourcesStore()
+
+    def snapshot(self, university_id: str) -> ResourcesSnapshot:
+        live = self._live()
+        if live is None:
+            return self._memory.snapshot(university_id)
+        try:
+            return live.snapshot(university_id)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Firestore resources snapshot failed, using in-memory seed: %s", exc
+            )
+            return self._memory.snapshot(university_id)
+
+    def add_pantry(self, university_id: str, payload: PantryIn) -> PantryOut:
+        live = self._live()
+        if live is None:
+            return self._memory.add_pantry(university_id, payload)
+        return live.add_pantry(university_id, payload)
+
+    def update_pantry(
+        self, university_id: str, pantry_id: str, payload: PantryIn
+    ) -> PantryOut | None:
+        live = self._live()
+        if live is None:
+            return self._memory.update_pantry(university_id, pantry_id, payload)
+        return live.update_pantry(university_id, pantry_id, payload)
+
+    def delete_pantry(self, university_id: str, pantry_id: str) -> bool:
+        live = self._live()
+        if live is None:
+            return self._memory.delete_pantry(university_id, pantry_id)
+        return live.delete_pantry(university_id, pantry_id)
+
+    def add_event(self, university_id: str, payload: SpecialEventIn) -> SpecialEventOut:
+        live = self._live()
+        if live is None:
+            return self._memory.add_event(university_id, payload)
+        return live.add_event(university_id, payload)
+
+    def update_event(
+        self, university_id: str, event_id: str, payload: SpecialEventIn
+    ) -> SpecialEventOut | None:
+        live = self._live()
+        if live is None:
+            return self._memory.update_event(university_id, event_id, payload)
+        return live.update_event(university_id, event_id, payload)
+
+    def delete_event(self, university_id: str, event_id: str) -> bool:
+        live = self._live()
+        if live is None:
+            return self._memory.delete_event(university_id, event_id)
+        return live.delete_event(university_id, event_id)
+
+    def add_bulletin(self, university_id: str, payload: BulletinItemIn) -> BulletinItemOut:
+        live = self._live()
+        if live is None:
+            return self._memory.add_bulletin(university_id, payload)
+        return live.add_bulletin(university_id, payload)
+
+    def update_bulletin(
+        self, university_id: str, item_id: str, payload: BulletinItemIn
+    ) -> BulletinItemOut | None:
+        live = self._live()
+        if live is None:
+            return self._memory.update_bulletin(university_id, item_id, payload)
+        return live.update_bulletin(university_id, item_id, payload)
+
+    def delete_bulletin(self, university_id: str, item_id: str) -> bool:
+        live = self._live()
+        if live is None:
+            return self._memory.delete_bulletin(university_id, item_id)
+        return live.delete_bulletin(university_id, item_id)
+
+
+resources_store: ResourcesStore = _FirestoreBackedResourcesStore()
