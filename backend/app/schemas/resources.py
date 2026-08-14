@@ -45,6 +45,8 @@ class SpecialEventIn(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     day: int = Field(ge=1, le=31)
+    month: int | None = Field(default=None, ge=1, le=12)
+    year: int | None = Field(default=None, ge=2000, le=2100)
     time: str = ""
     title: str = Field(min_length=1)
     tag: EventTag = "food"
@@ -56,6 +58,8 @@ class SpecialEventOut(BaseModel):
 
     id: str
     day: int
+    month: int | None = None
+    year: int | None = None
     time: str
     title: str
     tag: EventTag

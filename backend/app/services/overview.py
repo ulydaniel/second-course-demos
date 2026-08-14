@@ -1,4 +1,4 @@
-from app.schemas.dashboard import OverviewResponse, SummaryKpis
+from app.schemas.dashboard import AvailablePeriodsResponse, OverviewResponse, SummaryKpis
 from app.services import metrics, mock_data
 
 
@@ -24,3 +24,7 @@ def get_overview(
         claims_by_hour=snap["claims_by_hour"],
         locations=snap["locations"],
     )
+
+
+def get_available_periods(university_id: str | None = None) -> AvailablePeriodsResponse:
+    return AvailablePeriodsResponse(**metrics.get_available_periods(university_id))

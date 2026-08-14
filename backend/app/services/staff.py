@@ -1,5 +1,5 @@
 from app.schemas.dashboard import StaffMember
-from app.services import mock_data
+from app.services import metrics
 
 
 def list_staff(
@@ -9,7 +9,7 @@ def list_staff(
     year: int | None = None,
     week_start: str | None = None,
 ) -> list[StaffMember]:
-    snap = mock_data.get_snapshot(
+    snap = metrics.get_snapshot(
         university_id, period, month=month, year=year, week_start=week_start
     )
-    return [StaffMember(**member) for member in snap["staff"]]
+    return [StaffMember(**member) for member in snap.get("staff") or []]

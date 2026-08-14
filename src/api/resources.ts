@@ -10,7 +10,15 @@ export type ResourcesSnapshot = {
 
 export type PantryInput = Omit<Pantry, "id">;
 export type BulletinInput = Omit<BulletinItem, "id">;
-export type EventInput = Omit<SpecialEvent, "id"> & { day: number };
+export type EventInput = Omit<SpecialEvent, "id"> & {
+  day: number;
+  month?: number;
+  year?: number;
+};
+
+function campusQuery(universityId?: string): string {
+  return universityId ? `?universityId=${encodeURIComponent(universityId)}` : "";
+}
 
 function errorKindFromStatus(status: number): ApiErrorKind {
   return status >= 500 ? "server" : "client";
@@ -89,38 +97,77 @@ export async function fetchResources(universityId = "sdsu"): Promise<ResourcesSn
   );
 }
 
-export async function createPantry(body: PantryInput): Promise<Pantry> {
-  return request<Pantry>("/api/resources/pantries", { method: "POST", body });
+export async function createPantry(body: PantryInput, universityId?: string): Promise<Pantry> {
+  return request<Pantry>(`/api/resources/pantries${campusQuery(universityId)}`, {
+    method: "POST",
+    body,
+  });
 }
 
-export async function updatePantry(id: string, body: PantryInput): Promise<Pantry> {
-  return request<Pantry>(`/api/resources/pantries/${id}`, { method: "PATCH", body });
+export async function updatePantry(
+  id: string,
+  body: PantryInput,
+  universityId?: string,
+): Promise<Pantry> {
+  return request<Pantry>(`/api/resources/pantries/${id}${campusQuery(universityId)}`, {
+    method: "PATCH",
+    body,
+  });
 }
 
-export async function deletePantry(id: string): Promise<void> {
-  await request<void>(`/api/resources/pantries/${id}`, { method: "DELETE" });
+export async function deletePantry(id: string, universityId?: string): Promise<void> {
+  await request<void>(`/api/resources/pantries/${id}${campusQuery(universityId)}`, {
+    method: "DELETE",
+  });
 }
 
-export async function createEvent(body: EventInput): Promise<SpecialEvent> {
-  return request<SpecialEvent>("/api/resources/events", { method: "POST", body });
+export async function createEvent(body: EventInput, universityId?: string): Promise<SpecialEvent> {
+  return request<SpecialEvent>(`/api/resources/events${campusQuery(universityId)}`, {
+    method: "POST",
+    body,
+  });
 }
 
-export async function updateEvent(id: string, body: EventInput): Promise<SpecialEvent> {
-  return request<SpecialEvent>(`/api/resources/events/${id}`, { method: "PATCH", body });
+export async function updateEvent(
+  id: string,
+  body: EventInput,
+  universityId?: string,
+): Promise<SpecialEvent> {
+  return request<SpecialEvent>(`/api/resources/events/${id}${campusQuery(universityId)}`, {
+    method: "PATCH",
+    body,
+  });
 }
 
-export async function deleteEvent(id: string): Promise<void> {
-  await request<void>(`/api/resources/events/${id}`, { method: "DELETE" });
+export async function deleteEvent(id: string, universityId?: string): Promise<void> {
+  await request<void>(`/api/resources/events/${id}${campusQuery(universityId)}`, {
+    method: "DELETE",
+  });
 }
 
-export async function createBulletin(body: BulletinInput): Promise<BulletinItem> {
-  return request<BulletinItem>("/api/resources/bulletin", { method: "POST", body });
+export async function createBulletin(
+  body: BulletinInput,
+  universityId?: string,
+): Promise<BulletinItem> {
+  return request<BulletinItem>(`/api/resources/bulletin${campusQuery(universityId)}`, {
+    method: "POST",
+    body,
+  });
 }
 
-export async function updateBulletin(id: string, body: BulletinInput): Promise<BulletinItem> {
-  return request<BulletinItem>(`/api/resources/bulletin/${id}`, { method: "PATCH", body });
+export async function updateBulletin(
+  id: string,
+  body: BulletinInput,
+  universityId?: string,
+): Promise<BulletinItem> {
+  return request<BulletinItem>(`/api/resources/bulletin/${id}${campusQuery(universityId)}`, {
+    method: "PATCH",
+    body,
+  });
 }
 
-export async function deleteBulletin(id: string): Promise<void> {
-  await request<void>(`/api/resources/bulletin/${id}`, { method: "DELETE" });
+export async function deleteBulletin(id: string, universityId?: string): Promise<void> {
+  await request<void>(`/api/resources/bulletin/${id}${campusQuery(universityId)}`, {
+    method: "DELETE",
+  });
 }

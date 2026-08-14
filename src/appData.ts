@@ -126,6 +126,8 @@ export type SpecialEvent = {
   title: string;
   tag: "food" | "resource" | "event";
   note?: string;
+  month?: number;
+  year?: number;
 };
 
 export const SPECIAL_EVENTS: Record<number, SpecialEvent[]> = {

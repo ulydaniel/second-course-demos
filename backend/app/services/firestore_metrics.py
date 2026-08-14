@@ -15,12 +15,13 @@ Demographics are aggregated with per-campus `minCellSize` suppression and never
 expose an individual student (no uid/email/displayName leaves this module).
 
 `build_snapshot()` returns a dict with the same keys the mock snapshot exposes so
-overview/posts/impact stay identical, or None when Firestore is unavailable.
+overview/posts/staff/impact stay identical, or None when Firestore is unavailable.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -219,6 +220,74 @@ def build_snapshot(
         return None
 
 
+def available_periods(university_id: str | None = None) -> dict[str, Any] | None:
+    """List week / month / academic-year keys that have posts or claims.
+
+    Returns None when Firestore is unavailable or the campus has no mirrored
+    posts (caller should fall back to mock). Empty campus activity yields empty
+    lists so the UI can hide all period options.
+    """
+    cols = metrics_cache.get_collections()
+    if cols is None:
+        return None
+    try:
+        return _compute_available_periods(cols, university_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Firestore available-periods failed, falling back: %s", exc)
+        return None
+
+
+def _compute_available_periods(cols, university_id: str | None) -> dict[str, Any] | None:
+    from datetime import timedelta
+
+    campus = canonical_campus(university_id or "sdsu")
+    cfg = _campus_config(cols["campuses"], campus)
+    tz = _campus_tzinfo(cfg)
+    posts, claims = _scope_documents(cols, campus)
+    if not posts:
+        # Campus not mirrored in Firestore (e.g. csulb) — signal mock fallback.
+        return None
+
+    month_keys: set[tuple[int, int]] = set()
+    week_keys: set[str] = set()
+    academic_years: set[int] = set()
+
+    def absorb(dt: datetime | None) -> None:
+        if dt is None:
+            return
+        local = dt.astimezone(tz)
+        month_keys.add((local.year, local.month))
+        local_day = local.date()
+        monday = local_day - timedelta(days=local_day.weekday())
+        week_keys.add(monday.isoformat())
+        ay = local.year if local.month >= 8 else local.year - 1
+        academic_years.add(ay)
+
+    for p in posts:
+        absorb(_to_dt(p.get("createdAt")))
+    for c in claims:
+        absorb(_to_dt(c.get("createdAt")))
+
+    months = [{"year": y, "month": m} for y, m in sorted(month_keys)]
+    weeks = sorted(week_keys)
+    ay_list = sorted(academic_years)
+
+    periods: list[str] = []
+    if weeks:
+        periods.append("week")
+    if months:
+        periods.append("month")
+    if ay_list:
+        periods.append("year")
+
+    return {
+        "months": months,
+        "weeks": weeks,
+        "academic_years": ay_list,
+        "periods": periods,
+    }
+
+
 def _compute_snapshot(cols, university_id, period, month, year, week_start) -> dict[str, Any] | None:
     campus = canonical_campus(university_id or "sdsu")
     cfg = _campus_config(cols["campuses"], campus)
@@ -288,6 +357,8 @@ def _compute_snapshot(cols, university_id, period, month, year, week_start) -> d
     claims_by_hour = _series_by_hour(claims_in, tz)
     locations = _locations(posts_in, claims_in, post_by_id)
     post_records = _post_records(posts_in, claims_by_post, lbs_by_post, first_by_post, tz)
+    users_by_id = {u["id"]: u for u in cols.get("users") or [] if u.get("id")}
+    staff = _staff_records(posts_in, first_by_post, users_by_id, tz)
     waste_months, waste_lbs, climate_tco2 = _waste_series(claims_in, claim_weight, cfg, tz)
 
     summary = {
@@ -311,6 +382,7 @@ def _compute_snapshot(cols, university_id, period, month, year, week_start) -> d
         "claims_by_hour": claims_by_hour,
         "locations": locations,
         "posts": post_records,
+        "staff": staff,
         "waste_months": waste_months,
         "waste_lbs": waste_lbs,
         "climate_months": waste_months,
@@ -383,12 +455,15 @@ def _post_records(posts_in, claims_by_post, lbs_by_post, first_by_post, tz):
         views = int(p.get("viewCount") or 0)
         claims = claims_by_post.get(pid, 0)
         loc = (p.get("location") or {}).get("placeName") if isinstance(p.get("location"), dict) else None
+        place = loc or (p.get("buildingRoom") or "—")
+        if place == "Selected Location":
+            place = "—"
         records.append(
             {
                 "id": pid,
-                "title": p.get("title") or "Untitled post",
+                "title": _pretty_title(p, place, local),
                 "staff": p.get("posterName") or "Unknown organizer",
-                "location": loc or (p.get("buildingRoom") or "—"),
+                "location": place,
                 "posted": posted,
                 "posted_at": posted_at,
                 "claims": claims,
@@ -403,10 +478,204 @@ def _post_records(posts_in, claims_by_post, lbs_by_post, first_by_post, tz):
     return records
 
 
+# Display roles for known posting units (sandbox orgType is often wrong).
+_DEPT_ROLE_BY_NAME = {
+    "veterans center": "University Dept",
+    "campus dining": "University Dept",
+    "student health services": "University Dept",
+    "pride center": "University Dept",
+    "grad student association": "University Dept",
+    "graduate student association": "University Dept",
+    "computer science society": "Student Club",
+    "residential education": "University Dept",
+    "associated students": "University Dept",
+}
+
+_ORGTYPE_DISPLAY = {
+    "student club": "Student Club",
+    "greek life": "Greek Life",
+    "cultural org": "Cultural Org",
+    "athletics": "Athletics",
+    "academic dept": "Academic Dept",
+    "university dept / dining": "University Dept",
+    "university dept": "University Dept",
+    "other": "Other",
+}
+
+
+def _department_role(name: str, org_type: Any) -> str:
+    mapped = _DEPT_ROLE_BY_NAME.get((name or "").strip().lower())
+    if mapped:
+        return mapped
+    if isinstance(org_type, str) and org_type.strip():
+        return _ORGTYPE_DISPLAY.get(org_type.strip().lower(), org_type.strip())
+    return "Organizer"
+
+
+def _staff_records(posts_in, first_by_post, users_by_id, tz):
+    """Top organizers: group posts by posterId (DATA_CONTRACT.md §5)."""
+    groups: dict[str, dict[str, Any]] = {}
+    for p in posts_in:
+        uid = p.get("posterId") or p.get("posterName") or "unknown"
+        name = p.get("posterName") or "Unknown organizer"
+        dt = _to_dt(p.get("createdAt"))
+        g = groups.setdefault(uid, {"name": name, "posts": 0, "last_dt": None, "firsts": []})
+        g["posts"] += 1
+        if name and name != "Unknown organizer":
+            g["name"] = name
+        if dt is not None and (g["last_dt"] is None or dt > g["last_dt"]):
+            g["last_dt"] = dt
+        post_id = p.get("id")
+        if post_id in first_by_post:
+            g["firsts"].append(first_by_post[post_id] / 60)
+
+    latest = max((g["last_dt"] for g in groups.values() if g["last_dt"]), default=None)
+    ref = latest or datetime.now(timezone.utc)
+
+    rows = []
+    for uid, g in groups.items():
+        user = users_by_id.get(uid) or {}
+        last_dt = g["last_dt"]
+        avg = round(sum(g["firsts"]) / len(g["firsts"]), 1) if g["firsts"] else 0.0
+        rows.append(
+            {
+                "name": g["name"],
+                "role": _department_role(g["name"], user.get("orgType")),
+                "posts": g["posts"],
+                "last_post": _relative_last_post(last_dt, ref, tz) if last_dt else "—",
+                "avg_claim_min": avg,
+                "utilization": _staff_utilization(last_dt, ref),
+            }
+        )
+    rows.sort(key=lambda r: (-r["posts"], r["name"]))
+    return rows
+
+
+def _staff_utilization(last_dt: datetime | None, ref: datetime) -> str:
+    if last_dt is None:
+        return "low"
+    days = (ref.astimezone(timezone.utc) - last_dt.astimezone(timezone.utc)).days
+    if days <= 7:
+        return "high"
+    if days <= 21:
+        return "medium"
+    return "low"
+
+
+def _relative_last_post(last_dt: datetime, ref: datetime, tz) -> str:
+    local = last_dt.astimezone(tz)
+    ref_local = ref.astimezone(tz)
+    days = (ref_local.date() - local.date()).days
+    if days <= 0:
+        return f"Today, {_clock(local)}"
+    if days == 1:
+        return f"Yesterday, {_clock(local)}"
+    if days < 14:
+        return f"{days} days ago"
+    return _human_time(local)
+
+
+def _clock(local: datetime) -> str:
+    hour12 = ((local.hour + 11) % 12) + 1
+    ampm = "a" if local.hour < 12 else "p"
+    return f"{hour12}:{local.minute:02d}{ampm}"
+
+
 def _human_time(local: datetime) -> str:
     hour12 = ((local.hour + 11) % 12) + 1
     ampm = "a" if local.hour < 12 else "p"
     return f"{_MONTH_ABBR[local.month - 1]} {local.day}, {hour12}:{local.minute:02d}{ampm}"
+
+
+_GENERATED_TITLE = re.compile(
+    r"^(untitled(\s+post)?|none|n/?a|null|test|asdf|"
+    r"post[_-]?[a-z0-9]+|p-\d+)$",
+    re.IGNORECASE,
+)
+_UUIDISH = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_generated_title(title: str) -> bool:
+    """True for auto IDs like post_00430kise, UUIDs, or empty/untitled labels."""
+    text = (title or "").strip()
+    if not text:
+        return True
+    if _GENERATED_TITLE.match(text) or _UUIDISH.match(text):
+        return True
+    compact = re.sub(r"[\s_-]+", "", text)
+    if " " not in text and text.lower().startswith("post") and compact.isalnum() and len(text) <= 40:
+        return True
+    return False
+
+
+def _meal_window(local: datetime | None) -> str | None:
+    if local is None:
+        return None
+    hour = local.hour
+    if 6 <= hour < 11:
+        return "Breakfast"
+    if 11 <= hour < 15:
+        return "Lunch"
+    if 15 <= hour < 17:
+        return "Afternoon"
+    if 17 <= hour < 21:
+        return "Dinner"
+    return "Evening"
+
+
+def _food_phrase(haystack: str) -> str | None:
+    hay = haystack.lower()
+    for keywords, _value, _weight in _VALUE_RULES:
+        for kw in keywords:
+            idx = hay.find(kw)
+            if idx != -1 and (idx == 0 or not hay[idx - 1].isalnum()):
+                if kw == "bbq":
+                    return "BBQ"
+                return kw.capitalize()
+    return None
+
+
+def _cleanup_human_title(title: str) -> str:
+    cleaned = re.sub(r"[_-]+", " ", title).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned
+
+
+def _pretty_title(post: dict[str, Any], place: str, local: datetime | None) -> str:
+    """Replace generated IDs with a readable leftover-food label."""
+    raw = str(post.get("title") or "").strip()
+    desc = str(post.get("description") or "").strip()
+    tags = [str(t) for t in (post.get("tags") or []) if t]
+    haystack = " ".join(part for part in [raw, desc, *tags] if part)
+
+    if not _looks_like_generated_title(raw):
+        return _cleanup_human_title(raw)
+
+    if desc:
+        sentence = re.split(r"[.!?\n]", desc, maxsplit=1)[0].strip()
+        if sentence and not _looks_like_generated_title(sentence) and 8 <= len(sentence) <= 90:
+            return sentence[0].upper() + sentence[1:]
+
+    food = _food_phrase(haystack)
+    meal = _meal_window(local)
+    loc = place if place and place != "—" else None
+
+    if food and loc:
+        return f"{food} leftovers · {loc}"
+    if food and meal:
+        return f"{meal} {food.lower()}"
+    if food:
+        return f"{food} leftovers"
+    if meal and loc:
+        return f"{meal} leftovers · {loc}"
+    if loc:
+        return f"Leftover food · {loc}"
+    if meal:
+        return f"{meal} leftover food"
+    return "Campus leftover food"
 
 
 def _waste_series(claims_in, claim_weight, cfg, tz):

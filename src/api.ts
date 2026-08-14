@@ -246,6 +246,22 @@ export type DashboardFilters = {
   weekStart: string;
 };
 
+export type AvailableMonth = {
+  year: number;
+  month: number;
+};
+
+export type AvailablePeriods = {
+  months: AvailableMonth[];
+  weeks: string[];
+  academicYears: number[];
+  periods: DashboardPeriod[];
+};
+
+export async function fetchAvailablePeriods(): Promise<AvailablePeriods> {
+  return fetchJson<AvailablePeriods>("/api/overview/available-periods");
+}
+
 export async function fetchDashboardData(filters: DashboardFilters): Promise<DashboardData> {
   const params = new URLSearchParams({ period: filters.period });
   if (filters.period === "week") {
